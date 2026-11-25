@@ -3,3 +3,5 @@ sh-graphs-data.json
 __pycache__
 .git
 test
+sh-graphs-ehp.json
+sh-graphs-ehp.json.tmp

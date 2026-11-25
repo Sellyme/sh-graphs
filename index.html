@@ -212,6 +212,41 @@ td.id { font-variant-numeric: tabular-nums; color: var(--ink2); font-family: ui-
 td.act { text-align: right; width: 1%; }
 .tdempty { padding: 24px; text-align: center; color: var(--ink2); }
 
+/* EHP page */
+.lb { max-height: 66.67vh; overflow: auto; }           /* up to two thirds of the screen, only once the rows need it */
+.lb thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: 0 1px 0 var(--grid); }
+.lb th.sortable { cursor: pointer; user-select: none; }
+.lb th.sortable:hover, .lb th.sorted { color: var(--ink); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.lb .rk { color: var(--muted); width: 1%; }
+.lb .usr { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; font-weight: 600; text-align: left; }
+.lb .usr:hover { text-decoration: underline; }
+.lb .flag { font-size: 3em; line-height: 1; min-width: 1.4em; }
+.lb td.usrc, .lb th.usrc { width: 1%; min-width: 200px; }   /* name column stays compact; the metric columns share the spare width */
+.lb th.shrink { width: 1%; }
+.lb td.updc { padding-right: 4px; }                    /* Last Updated sits flush against the remove button */
+.lb td.act { padding-left: 0; }
+.lb .upd { display: inline-flex; align-items: center; gap: 8px; color: var(--ink2); }
+.lb .mini { height: 22px; min-width: 22px; padding: 0 5px; background: none; border: 1px solid var(--border); border-radius: 5px; color: var(--ink2); font-size: 13px; line-height: 1; }
+.lb .mini:hover:not(:disabled) { background: var(--btn-hover); color: var(--ink); }
+.lb .mini:disabled { opacity: 0.5; cursor: default; }
+.lb tr.detail td { background: var(--page); white-space: normal; }
+.lb .dgrid { display: flex; flex-wrap: wrap; gap: 6px 24px; margin-bottom: 8px; color: var(--ink2); font-size: 12px; }
+.lb .dgrid b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.lb table.inner { width: auto; min-width: 60%; }
+.lb table.inner th, .lb table.inner td { padding: 3px 12px 3px 0; border: 0; box-shadow: none; position: static; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--ink2); }
+.filters label { display: inline-flex; align-items: center; gap: 6px; }
+.filters select, .filters input { height: 28px; font-size: 12px; background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; padding: 0 6px; max-width: 200px; }
+.filters input { width: 64px; }
+.barcard { flex: none; min-height: 120px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; }
+.brow { display: grid; grid-template-columns: minmax(80px, 200px) 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
+.brow .bn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.brow .bt { height: 18px; background: var(--page); border-radius: 4px; overflow: hidden; }
+.brow .bf { height: 100%; background: var(--c, var(--accent)); border-radius: 4px; min-width: 2px; }
+.brow .bv { font-variant-numeric: tabular-nums; color: var(--ink2); min-width: 80px; }
+.barempty { margin: auto; color: var(--ink2); font-size: 13px; text-align: center; }
+
 @media (max-width: 560px) {
   .grp { flex-direction: column; align-items: stretch; gap: 2px; }
   .grp .gl { width: auto; }
@@ -227,6 +262,7 @@ td.act { text-align: right; width: 1%; }
       <div class="views" role="tablist" aria-label="Page">
         <button role="tab" id="vGraphs" aria-selected="true">Graphs</button>
         <button role="tab" id="vUsers" aria-selected="false">Users</button>
+        <button role="tab" id="vEhp" aria-selected="false">EHP</button>
       </div>
       <div class="pop" id="settingsWrap">
         <button class="btn" id="settingsBtn" aria-expanded="false" aria-controls="settingsPanel">Settings</button>
@@ -342,6 +378,44 @@ td.act { text-align: right; width: 1%; }
     </div>
   </section>
 
+  <!-- ===== EHP view ===== -->
+  <section id="ehpView" class="app" style="min-height:0; flex:1 1 auto" hidden>
+    <div class="bar">
+      <div class="search" id="ehpSearchWrap">
+        <input type="search" id="ehpSearch" placeholder="Add a user to the EHP leaderboard" autocomplete="off" spellcheck="false"
+               role="combobox" aria-expanded="false" aria-controls="ehpDd" aria-autocomplete="list">
+        <div class="dd" id="ehpDd" role="listbox" hidden></div>
+      </div>
+      <span class="muted">Adding a user downloads their completed games once. Saved data is only refreshed when you press &#8635;.</span>
+    </div>
+    <div class="filters" id="ehpFilters" aria-label="Filter which completed games count"></div>
+    <div class="tablewrap lb" id="ehpLb">
+      <table>
+        <thead><tr>
+          <th class="num shrink">Rank</th><th class="usrc">User</th>
+          <th class="num sortable" id="thEhp" title="Sort by EHP">EHP</th>
+          <th class="num sortable" id="thEff" title="Sort by efficiency">Efficiency</th>
+          <th class="num" title="Completed games counted">Games Completed</th>
+          <th class="num" title="Games completed in no more than the median completion time (ties count as faster)">Faster</th>
+          <th class="num" title="Games completed in more than the median completion time">Slower</th>
+          <th class="num" title="Faster divided by Slower">Ratio</th>
+          <th class="num shrink">Last Updated</th><th class="shrink"></th>
+        </tr></thead>
+        <tbody id="ehpRows"></tbody>
+      </table>
+    </div>
+    <div class="chart-head">
+      <h2 id="ehpBarTitle">Effective Hours Played</h2>
+      <div class="chart-tools">
+        <label class="muted">Show <select id="ehpMode" class="btn small" style="padding:0 6px">
+          <option value="ehp">EHP</option><option value="eff">Efficiency</option><option value="n">Games completed</option>
+        </select></label>
+      </div>
+    </div>
+    <section class="barcard" id="ehpBars" aria-label="Bar graph"></section>
+    <div class="legend" id="ehpLegend"></div>
+  </section>
+
   <div class="status" id="status" role="status" aria-live="polite"></div>
 </div>
 
@@ -352,7 +426,7 @@ td.act { text-align: right; width: 1%; }
   var FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
   var LS_KEY = 'sh-graphs-v1';
   var SERVED = /^https?:$/.test(location.protocol);
-  var API_MIN = '2024-01-01T00:00:00.000Z';
+  var API_MIN = '2024-04-25T00:00:00.000Z';
   var STALE_MS = 10 * 60 * 1000;
 
   // ================= Metrics =================
@@ -442,6 +516,7 @@ td.act { text-align: right; width: 1%; }
   var selection = [];             // {id, ci, visible}
   var metricKey = 'validPoints';
   var showPoints = false;         // draw a circle at every data point on every line
+  var countries = {};             // id -> country code, cached from historical data (used for EHP flags)
   var zeroBase = {};              // metric key -> true when its y-axis starts at 0 (1 for ranks)
   var FLIP = false;               // rank metrics draw with 1 at the top
   var data = new Map();           // id -> {status:'loading'|'ok'|'error', records:[], error, fetchedAt, req}
@@ -457,7 +532,7 @@ td.act { text-align: right; width: 1%; }
     var u = [];
     users.forEach(function (name, id) { u.push({ id: id, name: name }); });
     u.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    return { version: 1, users: u, presets: presets, selection: selection, metric: metricKey, zeroBase: zeroBase, showPoints: showPoints };
+    return { version: 1, users: u, presets: presets, selection: selection, metric: metricKey, zeroBase: zeroBase, showPoints: showPoints, countries: countries };
   }
   function applyStore(d) {
     users = new Map();
@@ -468,6 +543,7 @@ td.act { text-align: right; width: 1%; }
     }) : [];
     if (d.metric) metricKey = d.metric;
     showPoints = d.showPoints === true;
+    countries = (d.countries && typeof d.countries === 'object') ? d.countries : {};
     zeroBase = (d.zeroBase && typeof d.zeroBase === 'object') ? d.zeroBase : {};
   }
   var saveTimer = 0, saveWarned = false;
@@ -577,6 +653,13 @@ td.act { text-align: right; width: 1%; }
       recs.push(copy);
     });
     recs.sort(function (a, b) { return a._t - b._t; });
+    for (var ri = recs.length - 1; ri >= 0; ri--) {
+      var cc = recs[ri].countryCode;
+      if (typeof cc === 'string' && /^[A-Za-z]{2}$/.test(cc)) {
+        if (countries[id] !== cc.toUpperCase()) { countries[id] = cc.toUpperCase(); save(); }
+        break;
+      }
+    }
     var cur = data.get(id) || { req: 0 };
     cur.status = 'ok'; cur.records = recs; cur.error = ''; cur.fetchedAt = Date.now();
     data.set(id, cur);
@@ -1161,15 +1244,434 @@ td.act { text-align: right; width: 1%; }
     users = new Map(); save(); renderUsers(); renderLegend(); say('Deleted all saved users. Presets were kept.');
   });
 
+  // ================= EHP (Effective Hours Played) =================
+  // Kept completely apart from the graph data: nothing here is fetched until a user is added or a
+  // refresh is requested, results are saved to their own file (ehp-store) and never re-fetched on their own.
+  var ehp = { users: {}, tags: {} };      // users: id -> {ci, hidden, updated, games:[...]}
+  var ehpLoaded = false, ehpLoading = false;
+  var ehpState = new Map();               // id -> {s:'queued'|'loading'|'error', msg}
+  var ehpQueue = [], ehpBusy = false, ehpOpen = {};
+  var ehpFilter = { type: '', price: '', trust: '', vr: '', tag: '', from: '', to: '' };
+  var ehpMode = 'ehp', ehpSortKey = 'ehp', ehpFilterSig = null;
+
+  function ehpLoad() {
+    if (ehpLoaded || ehpLoading || !SERVED) return Promise.resolve();
+    ehpLoading = true;
+    return fetch('ehp-store', { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (d) {
+      if (d && d.users && typeof d.users === 'object') { ehp.users = d.users; ehp.tags = d.tags || {}; }
+      ehpLoaded = true;
+    }).catch(function () {
+      say('Could not read the saved EHP data. Nothing will be saved until it loads, reopen the EHP tab to retry.', true);
+    }).then(function () { ehpLoading = false; });
+  }
+  var ehpSaveTimer = 0;
+  function ehpSave() {
+    if (!ehpLoaded || !SERVED) return;          // never overwrite saved data we have not read
+    clearTimeout(ehpSaveTimer);
+    ehpSaveTimer = setTimeout(function () {
+      var out = { version: 1, tags: ehp.tags, users: {} };
+      Object.keys(ehp.users).forEach(function (id) { if (ehp.users[id].games) out.users[id] = ehp.users[id]; });
+      fetch('ehp-store', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out) })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); })
+        .catch(function () { say('Could not save EHP data to disk. Is server.py still running?', true); });
+    }, 400);
+  }
+  function ehpShow() {
+    renderEhp();
+    ehpLoad().then(function () { renderEhp(); });
+  }
+
+  function flagOf(id) {
+    var cc = countries[id];
+    if (!cc || !/^[A-Z]{2}$/.test(cc)) return '';
+    return String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65);
+  }
+  function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
+  function ehpParse(j) {
+    var games = [], list = [];
+    if (Array.isArray(j)) j.forEach(function (l) { if (l && l.app) list.push([l.appId != null ? l.appId : l.app.appId, l]); });
+    else if (j && typeof j === 'object') Object.keys(j).forEach(function (k) { list.push([k, j[k]]); });
+    else throw new Error('Unexpected reply from Steam Hunters.');
+    list.forEach(function (e) {
+      var l = e[1], a = l && l.app;
+      if (!a) return;
+      var rd = Date.parse(a.releaseDate);
+      games.push({
+        a: +e[0], n: a.name || String(e[0]),
+        p: num(l.playtime), m: num(a.medianCompletionTime),     // minutes
+        c: typeof l.completionTime === 'number' ? l.completionTime : num(l.playtime),   // user's time to complete, minutes
+        x: a.isRestricted ? 1 : 0,
+        i: l.isPlaytimeInvalid ? 1 : 0,                       // the user's playtime is untrustworthy (the completion itself still counts)
+        y: a.typeString || '', r: isFinite(rd) ? new Date(rd).getUTCFullYear() : 0,
+        f: a.isFree ? 1 : 0, v: a.isVrRequired ? 1 : 0,
+        g: (a.tags || []).map(function (t) { ehp.tags[t.tagId] = t.name; return t.tagId; })
+      });
+    });
+    return games;
+  }
+
+  function ehpNextCi() {
+    var used = {}; Object.keys(ehp.users).forEach(function (id) { used[ehp.users[id].ci] = true; });
+    for (var i = 0; ; i++) if (!used[i]) return i;
+  }
+  function ehpEnqueue(id) {
+    var st = ehpState.get(id);
+    if (st && (st.s === 'queued' || st.s === 'loading')) return;
+    if (!ehp.users[id]) ehp.users[id] = { ci: ehpNextCi(), hidden: false, updated: 0, games: null };
+    ehpState.set(id, { s: 'queued' });
+    ehpQueue.push(id);
+    renderEhp(); ehpPump();
+  }
+  function ehpPump() {
+    if (ehpBusy) return;
+    var id = ehpQueue.shift();
+    if (!id) return;
+    ehpBusy = true;
+    ehpState.set(id, { s: 'loading' });
+    renderEhp();
+    // One at a time: this endpoint is expensive for Steam Hunters.
+    fetch('sh/steam-users/' + id + '/licenses?state=Completed', { cache: 'no-store' }).then(function (r) {
+      return r.text().then(function (t) {
+        var j = null;
+        try { j = JSON.parse(t); } catch (e) { /* not JSON */ }
+        if (!r.ok) throw new Error((j && j.error) || ('Steam Hunters answered HTTP ' + r.status + '.'));
+        return ehpParse(j);
+      });
+    }).then(function (games) {
+      var u = ehp.users[id];
+      if (!u) return;                           // removed while loading
+      u.games = games; u.updated = Date.now();
+      ehpState.delete(id);
+      ehpSave();
+      say('EHP data loaded for ' + nameOf(id) + ' (' + games.length.toLocaleString() + ' completed games).');
+    }).catch(function (e) {
+      ehpState.set(id, { s: 'error', msg: (e && e.message && e.message !== 'Failed to fetch') ? e.message : 'Could not reach Steam Hunters.' });
+    }).then(function () { ehpBusy = false; renderEhp(); ehpPump(); });
+  }
+
+  // ---- numbers
+  function ehpPass(g) {
+    var f = ehpFilter;
+    if (f.type && g.y !== f.type) return false;
+    if (f.price === 'free' && !g.f) return false;
+    if (f.price === 'paid' && g.f) return false;
+    if (f.trust === 'trusted' && g.x) return false;
+    if (f.trust === 'restricted' && !g.x) return false;
+    if (f.vr === 'no' && g.v) return false;
+    if (f.vr === 'only' && !g.v) return false;
+    if (f.tag && g.g.indexOf(+f.tag) < 0) return false;
+    var from = parseInt(f.from, 10), to = parseInt(f.to, 10);
+    if (isFinite(from) && g.r < from) return false;
+    if (isFinite(to) && g.r > to) return false;
+    return true;
+  }
+  function ehpStats(id) {
+    var u = ehp.users[id];
+    if (!u || !u.games) return null;
+    var med = 0, medV = 0, play = 0, n = 0, fast = 0, slow = 0;
+    u.games.forEach(function (g) {
+      if (!ehpPass(g)) return;
+      med += g.m; n++;                                              // EHP and Games Completed count every game
+      if (g.i) return;                                              // invalid playtime: skip Efficiency, Faster, Slower, Ratio
+      medV += g.m; play += g.p;
+      if ((g.c != null ? g.c : g.p) <= g.m) fast++; else slow++;   // ties go to Faster
+    });
+    return { n: n, fast: fast, slow: slow, ehp: med / 60, played: play / 60, eff: play > 0 ? medV / play * 100 : null };
+  }
+  // Gold / silver / bronze rosettes with the rank digit centred on its ink, not its text box.
+  var ROSETTE = [
+    { star: '#F0B429', ring: '#B7791F', disc: '#FFE08A', rib: '#B7791F', num: '#8A5A12', name: 'Gold' },
+    { star: '#B8C0CC', ring: '#7B8794', disc: '#E9ECF0', rib: '#7B8794', num: '#52606D', name: 'Silver' },
+    { star: '#CD7F32', ring: '#8C4F1B', disc: '#F0B07A', rib: '#8C4F1B', num: '#6B3A12', name: 'Bronze' }
+  ];
+  var digitInk = {}, inkCtx = null;
+  function inkBox(d) {                  // ink bounds of a digit at 100px, relative to its alphabetic origin
+    if (digitInk[d]) return digitInk[d];
+    if (!inkCtx) inkCtx = document.createElement('canvas').getContext('2d');
+    inkCtx.font = '500 100px ' + FONT;
+    var m = inkCtx.measureText(d);
+    return (digitInk[d] = { l: m.actualBoundingBoxLeft, r: m.actualBoundingBoxRight, a: m.actualBoundingBoxAscent, d: m.actualBoundingBoxDescent });
+  }
+  function rosette(rank) {
+    var c = ROSETTE[rank - 1], NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 448 448'); svg.setAttribute('width', '30'); svg.setAttribute('height', '30');
+    svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', c.name + ' rosette, rank ' + rank);
+    svg.style.verticalAlign = 'middle';
+    function add(tag, attrs) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); svg.appendChild(e); return e; }
+    var tail = 'M93 310H150L192 352L163 356L137 445L110 385L53 383Z';
+    add('path', { d: tail, fill: c.rib });
+    add('path', { d: tail, fill: c.rib, transform: 'translate(445 0) scale(-1 1)' });
+    add('path', { d: 'M222 2L266 46H331V111L375 155L331 199V264H266L222 308L178 264H113V199L69 155L113 111V46H178Z', fill: c.star });
+    add('circle', { cx: 222, cy: 157, r: 78, fill: c.ring });
+    add('circle', { cx: 222, cy: 157, r: 64, fill: c.disc });
+    var ink = inkBox(String(rank)), size = 100, k = size / 100;
+    // place the digit so the middle of its ink box lands on the disc centre
+    var x = 222 - (ink.r - ink.l) / 2 * k, y = 157 + (ink.a - ink.d) / 2 * k;
+    var t = add('text', { x: x, y: y, 'font-size': size, 'font-weight': 500, fill: c.num });
+    t.style.fontFamily = FONT;
+    t.textContent = String(rank);
+    return svg;
+  }
+  function fmtRatio(fast, slow) {
+    if (!slow) return fast ? '∞' : 'n/a';      // never slower: infinite; no games: nothing to show
+    return (fast / slow).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'x';
+  }
+  function fmtH(v) { return v.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' h'; }
+  function fmtEff(v) { return v === null ? 'n/a' : v.toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%'; }
+  function ehpRows() {
+    var rows = Object.keys(ehp.users).map(function (id) { return { id: id, st: ehpStats(id) }; });
+    var key = ehpSortKey;
+    rows.sort(function (a, b) {
+      if (!a.st || !b.st) return a.st ? -1 : b.st ? 1 : nameOf(a.id).localeCompare(nameOf(b.id));
+      var x = key === 'eff' ? a.st.eff : a.st.ehp, y = key === 'eff' ? b.st.eff : b.st.ehp;
+      if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+      return y - x || nameOf(a.id).localeCompare(nameOf(b.id));
+    });
+    return rows;
+  }
+
+  // ---- filters
+  function renderEhpFilters() {
+    var types = {}, tags = {};
+    Object.keys(ehp.users).forEach(function (id) {
+      (ehp.users[id].games || []).forEach(function (g) { if (g.y) types[g.y] = 1; g.g.forEach(function (t) { tags[t] = 1; }); });
+    });
+    var sig = Object.keys(types).sort().join('|') + '#' + Object.keys(tags).length;
+    if (sig === ehpFilterSig) return;
+    ehpFilterSig = sig;
+    var box = $('ehpFilters'); box.textContent = '';
+    function select(label, key, opts) {
+      var l = document.createElement('label'); l.appendChild(document.createTextNode(label));
+      var s = document.createElement('select');
+      opts.forEach(function (o) { var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; s.appendChild(op); });
+      s.value = ehpFilter[key];
+      if (s.value !== ehpFilter[key]) { ehpFilter[key] = ''; s.value = ''; }
+      s.addEventListener('change', function () { ehpFilter[key] = s.value; renderEhp(); });
+      l.appendChild(s); box.appendChild(l);
+    }
+    function year(label, key) {
+      var l = document.createElement('label'); l.appendChild(document.createTextNode(label));
+      var i = document.createElement('input'); i.type = 'text'; i.inputMode = 'numeric'; i.maxLength = 4; i.value = ehpFilter[key]; i.placeholder = 'any';
+      i.addEventListener('input', function () { ehpFilter[key] = i.value.trim(); renderEhp(); });
+      l.appendChild(i); box.appendChild(l);
+    }
+    select('Type', 'type', [['', 'All']].concat(Object.keys(types).sort().map(function (t) { return [t, t]; })));
+    select('Price', 'price', [['', 'All'], ['free', 'Free only'], ['paid', 'Paid only']]);
+    select('Trusted', 'trust', [['', 'All'], ['trusted', 'Trusted only'], ['restricted', 'Restricted only']]);
+    select('VR', 'vr', [['', 'All'], ['no', 'Exclude VR'], ['only', 'VR only']]);
+    select('Tag', 'tag', [['', 'Any']].concat(Object.keys(tags).map(function (t) { return [t, ehp.tags[t] || ('Tag ' + t)]; })
+      .sort(function (a, b) { return a[1].localeCompare(b[1]); })));
+    year('Released from', 'from'); year('to', 'to');
+    var rs = document.createElement('button'); rs.type = 'button'; rs.className = 'btn small'; rs.textContent = 'Reset filters';
+    rs.addEventListener('click', function () { ehpFilter = { type: '', price: '', trust: '', vr: '', tag: '', from: '', to: '' }; ehpFilterSig = null; renderEhp(); });
+    box.appendChild(rs);
+  }
+  function ehpFiltered() { var f = ehpFilter; return !!(f.type || f.price || f.trust || f.vr || f.tag || f.from || f.to); }
+
+  // ---- leaderboard
+  function cell(tr, text, cls) { var td = document.createElement('td'); if (cls) td.className = cls; if (text != null) td.textContent = text; tr.appendChild(td); return td; }
+  function renderEhpTable() {
+    var body = $('ehpRows'); body.textContent = '';
+    $('thEhp').className = 'num sortable' + (ehpSortKey === 'ehp' ? ' sorted' : '');
+    $('thEff').className = 'num sortable' + (ehpSortKey === 'eff' ? ' sorted' : '');
+    var rows = ehpRows();
+    if (!rows.length) {
+      var tr0 = document.createElement('tr'), td0 = document.createElement('td');
+      td0.colSpan = 10; td0.className = 'tdempty';
+      td0.textContent = !SERVED ? 'EHP needs the local server (python3 server.py): the page cannot download or save this data when opened as a file.'
+        : ehpLoading ? 'Loading saved EHP data.' : 'No users yet. Add one above to download their completed games.';
+      tr0.appendChild(td0); body.appendChild(tr0);
+      return;
+    }
+    var rank = 0;
+    rows.forEach(function (r) {
+      var id = r.id, u = ehp.users[id], st = ehpState.get(id), tr = document.createElement('tr');
+      var tdR = cell(tr, null, 'num rk');
+      if (r.st) { rank++; if (rank <= 3) tdR.appendChild(rosette(rank)); else tdR.textContent = String(rank); }
+      var tdU = cell(tr, null, 'usrc');
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'usr';
+      var fl = document.createElement('span'); fl.className = 'flag'; fl.textContent = flagOf(id);
+      var nm = document.createElement('span'); nm.textContent = nameOf(id);
+      b.appendChild(fl); b.appendChild(nm);
+      if (r.st) { b.title = 'Show details'; b.setAttribute('aria-expanded', ehpOpen[id] ? 'true' : 'false'); b.addEventListener('click', function () { ehpOpen[id] = !ehpOpen[id]; renderEhpTable(); }); }
+      tdU.appendChild(b);
+      if (r.st) {
+        cell(tr, fmtH(r.st.ehp), 'num'); cell(tr, fmtEff(r.st.eff), 'num');
+        cell(tr, r.st.n.toLocaleString(), 'num'); cell(tr, r.st.fast.toLocaleString(), 'num'); cell(tr, r.st.slow.toLocaleString(), 'num');
+        cell(tr, fmtRatio(r.st.fast, r.st.slow), 'num');
+      } else {
+        var tdS = cell(tr, null); tdS.colSpan = 6; tdS.className = 'muted';
+        if (st && st.s === 'error') { tdS.textContent = st.msg; tdS.style.color = 'var(--err)'; }
+        else if (st && st.s === 'loading') { var sp = document.createElement('i'); sp.className = 'spin'; tdS.appendChild(sp); tdS.appendChild(document.createTextNode(' Downloading, this can take a while')); }
+        else tdS.textContent = st && st.s === 'queued' ? 'Queued' : 'No data';
+      }
+      var tdL = cell(tr, null, 'num updc'), wrap = document.createElement('span'); wrap.className = 'upd';
+      wrap.appendChild(document.createTextNode(u.updated ? fmtFull(u.updated) : 'Never'));
+      var rf = document.createElement('button'); rf.type = 'button'; rf.className = 'mini';
+      var busy = st && (st.s === 'queued' || st.s === 'loading');
+      rf.textContent = '↻'; rf.disabled = !!busy;
+      rf.title = busy ? 'Update already in progress' : (u.games ? 'Queue an update for ' + nameOf(id) : 'Retry');
+      rf.setAttribute('aria-label', rf.title);
+      rf.addEventListener('click', function () { ehpEnqueue(id); });
+      wrap.appendChild(rf); tdL.appendChild(wrap);
+      var tdX = cell(tr, null, 'act'), x = document.createElement('button'); x.type = 'button'; x.className = 'mini'; x.textContent = '×';
+      x.title = 'Remove from the EHP leaderboard'; x.setAttribute('aria-label', 'Remove ' + nameOf(id));
+      x.addEventListener('click', function () {
+        if (u.games && !confirm('Remove ' + nameOf(id) + '? Their downloaded data will be deleted and would need to be downloaded again.')) return;
+        delete ehp.users[id]; ehpState.delete(id);
+        ehpQueue = ehpQueue.filter(function (q) { return q !== id; });
+        ehpSave(); renderEhp();
+      });
+      tdX.appendChild(x);
+      body.appendChild(tr);
+      if (r.st && ehpOpen[id]) body.appendChild(ehpDetailRow(id, r.st));
+    });
+  }
+  function ehpDetailRow(id, st) {
+    var tr = document.createElement('tr'); tr.className = 'detail';
+    var td = document.createElement('td'); td.colSpan = 10; tr.appendChild(td);
+    var g = document.createElement('div'); g.className = 'dgrid';
+    [['Games counted', st.n.toLocaleString()], ['Hours played (valid playtime only)', fmtH(st.played)],
+     ['Median completion time', fmtH(st.ehp)]].forEach(function (p) {
+      var s = document.createElement('span'); s.appendChild(document.createTextNode(p[0] + ': '));
+      var b = document.createElement('b'); b.textContent = p[1]; s.appendChild(b); g.appendChild(s);
+    });
+    td.appendChild(g);
+    var games = ehp.users[id].games.filter(ehpPass).sort(function (a, b) { return b.m - a.m; }).slice(0, 10);
+    if (games.length) {
+      var t = document.createElement('table'); t.className = 'inner';
+      var h = document.createElement('tr');
+      ['Biggest contributors', 'Median', 'You played', 'Efficiency'].forEach(function (c, i) { var th = document.createElement('th'); th.textContent = c; if (i) th.className = 'num'; h.appendChild(th); });
+      t.appendChild(h);
+      games.forEach(function (x) {
+        var r = document.createElement('tr');
+        cell(r, x.n); cell(r, fmtH(x.m / 60), 'num'); cell(r, x.i ? 'invalid' : fmtH(x.p / 60), 'num'); cell(r, !x.i && x.p > 0 ? fmtEff(x.m / x.p * 100) : 'n/a', 'num');
+        t.appendChild(r);
+      });
+      td.appendChild(t);
+    }
+    return tr;
+  }
+  $('thEhp').addEventListener('click', function () { ehpSortKey = 'ehp'; renderEhpTable(); });
+  $('thEff').addEventListener('click', function () { ehpSortKey = 'eff'; renderEhpTable(); });
+
+  // ---- bar graph (reads stored data only; hiding a user never touches the API or the saved data)
+  function ehpValue(st) { return ehpMode === 'eff' ? st.eff : ehpMode === 'n' ? st.n : st.ehp; }
+  function ehpFmt(v) { return v === null ? 'n/a' : ehpMode === 'eff' ? fmtEff(v) : ehpMode === 'n' ? Math.round(v).toLocaleString() + ' games' : fmtH(v); }
+  function renderEhpBars() {
+    var box = $('ehpBars'); box.textContent = '';
+    $('ehpBarTitle').textContent = (ehpMode === 'eff' ? 'Efficiency' : ehpMode === 'n' ? 'Games completed' : 'Effective Hours Played') + (ehpFiltered() ? ' (filtered)' : '');
+    var dark = isDark();
+    var rows = ehpRows().filter(function (r) { return r.st && !ehp.users[r.id].hidden && ehpValue(r.st) !== null; });
+    rows.sort(function (a, b) { return ehpValue(b.st) - ehpValue(a.st); });
+    if (!rows.length) {
+      var e = document.createElement('div'); e.className = 'barempty';
+      e.textContent = Object.keys(ehp.users).some(function (id) { return ehp.users[id].games; }) ? 'All users are hidden. Click a name below to show it again.' : 'Add users above to compare them.';
+      box.appendChild(e); return;
+    }
+    var max = Math.max.apply(null, rows.map(function (r) { return ehpValue(r.st); })) || 1;
+    rows.forEach(function (r) {
+      var v = ehpValue(r.st), row = document.createElement('div'); row.className = 'brow';
+      var n = document.createElement('div'); n.className = 'bn'; n.textContent = (flagOf(r.id) ? flagOf(r.id) + ' ' : '') + nameOf(r.id);
+      var t = document.createElement('div'); t.className = 'bt';
+      var f = document.createElement('div'); f.className = 'bf'; f.style.width = Math.max(0, v / max * 100) + '%';
+      f.style.setProperty('--c', seriesColor(ehp.users[r.id].ci, dark));
+      t.appendChild(f);
+      var val = document.createElement('div'); val.className = 'bv'; val.textContent = ehpFmt(v);
+      row.title = nameOf(r.id) + ': ' + ehpFmt(v);
+      row.appendChild(n); row.appendChild(t); row.appendChild(val); box.appendChild(row);
+    });
+  }
+  function renderEhpLegend() {
+    var box = $('ehpLegend'), dark = isDark(); box.textContent = '';
+    Object.keys(ehp.users).forEach(function (id) {
+      var u = ehp.users[id]; if (!u.games) return;
+      var st = ehpStats(id);
+      var chip = document.createElement('div'); chip.className = 'chip' + (u.hidden ? ' off' : '');
+      var tog = document.createElement('button'); tog.type = 'button'; tog.className = 'tog';
+      tog.setAttribute('aria-pressed', u.hidden ? 'false' : 'true');
+      tog.title = u.hidden ? 'Show on graph' : 'Hide from graph';
+      var sw = document.createElement('i'); sw.className = 'sw'; sw.style.setProperty('--c', seriesColor(u.ci, dark));
+      var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = nameOf(id);
+      var ct = document.createElement('span'); ct.className = 'ct'; ct.textContent = st ? ehpFmt(ehpValue(st)) : '';
+      tog.appendChild(sw); tog.appendChild(nm); tog.appendChild(ct);
+      tog.addEventListener('click', function () { u.hidden = !u.hidden; ehpSave(); renderEhpBars(); renderEhpLegend(); });
+      chip.appendChild(tog); box.appendChild(chip);
+    });
+  }
+  $('ehpMode').addEventListener('change', function () { ehpMode = this.value; renderEhpBars(); renderEhpLegend(); });
+  function renderEhp() {
+    if ($('ehpView').hidden) return;
+    renderEhpFilters(); renderEhpTable(); renderEhpBars(); renderEhpLegend();
+  }
+
+  // ---- add-user search
+  var ehpDdItems = [], ehpDdActive = -1;
+  function ehpCloseDd() { $('ehpDd').hidden = true; $('ehpSearch').setAttribute('aria-expanded', 'false'); ehpDdActive = -1; }
+  function ehpAdd(id) {
+    if (!SERVED) { say('EHP needs the local server (python3 server.py).', true); return; }
+    if (!ehpLoaded) { say('Saved EHP data has not loaded yet, try again in a moment.', true); return; }
+    if (ehp.users[id]) { say(nameOf(id) + ' is already on the leaderboard. Use the refresh button to update them.'); return; }
+    ehpEnqueue(id);
+    $('ehpSearch').value = ''; ehpCloseDd();
+  }
+  function renderEhpDd() {
+    var dd = $('ehpDd'), q = $('ehpSearch').value.trim();
+    dd.textContent = ''; dd.hidden = false; $('ehpSearch').setAttribute('aria-expanded', 'true');
+    ehpDdItems = matches(q);
+    if (/^\d{17}$/.test(q) && !users.has(q)) ehpDdItems.unshift({ id: q, name: 'Steam ID ' + q });
+    if (!ehpDdItems.length) {
+      var h = document.createElement('div'); h.className = 'hint';
+      h.textContent = 'No saved user matches "' + q + '". You can also type a 17-digit Steam ID.';
+      dd.appendChild(h);
+    }
+    if (ehpDdActive >= ehpDdItems.length) ehpDdActive = ehpDdItems.length - 1;
+    ehpDdItems.forEach(function (it, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'opt' + (i === ehpDdActive ? ' active' : '');
+      b.setAttribute('role', 'option'); b.tabIndex = -1;
+      var ck = document.createElement('span'); ck.className = 'ck'; ck.textContent = ehp.users[it.id] ? '✓' : '';
+      var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = it.name;
+      var idn = document.createElement('span'); idn.className = 'id'; idn.textContent = it.id;
+      b.appendChild(ck); b.appendChild(nm); b.appendChild(idn);
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      b.addEventListener('click', function () { ehpAdd(it.id); });
+      dd.appendChild(b);
+    });
+  }
+  $('ehpSearch').addEventListener('focus', renderEhpDd);
+  $('ehpSearch').addEventListener('click', function () { if ($('ehpDd').hidden) renderEhpDd(); });
+  $('ehpSearch').addEventListener('input', function () { ehpDdActive = $('ehpSearch').value.trim() ? 0 : -1; renderEhpDd(); });
+  $('ehpSearch').addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if ($('ehpDd').hidden) renderEhpDd();
+      if (!ehpDdItems.length) return;
+      ehpDdActive = (ehpDdActive + (e.key === 'ArrowDown' ? 1 : -1) + ehpDdItems.length) % ehpDdItems.length;
+      renderEhpDd();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      var it = ehpDdItems[ehpDdActive >= 0 ? ehpDdActive : 0];
+      if (it) ehpAdd(it.id);
+    } else if (e.key === 'Escape') ehpCloseDd();
+  });
+  document.addEventListener('pointerdown', function (e) { if (!$('ehpDd').hidden && !$('ehpSearchWrap').contains(e.target)) ehpCloseDd(); });
+  document.addEventListener('focusin', function (e) { if (!$('ehpDd').hidden && !$('ehpSearchWrap').contains(e.target)) ehpCloseDd(); });
+
   // ================= View switch =================
   function setView(v) {
-    var g = v === 'graphs';
-    $('graphsView').hidden = !g; $('usersView').hidden = g;
+    var g = v === 'graphs', e = v === 'ehp';
+    $('graphsView').hidden = !g; $('usersView').hidden = v !== 'users'; $('ehpView').hidden = !e;
     $('vGraphs').setAttribute('aria-selected', g ? 'true' : 'false');
-    $('vUsers').setAttribute('aria-selected', g ? 'false' : 'true');
-    if (g) { renderLegend(); requestAnimationFrame(draw); } else renderUsers();
-    closeDropdown(); setPresetPanel(false); setSettingsPanel(false);
+    $('vUsers').setAttribute('aria-selected', v === 'users' ? 'true' : 'false');
+    $('vEhp').setAttribute('aria-selected', e ? 'true' : 'false');
+    if (g) { renderLegend(); requestAnimationFrame(draw); } else if (e) ehpShow(); else renderUsers();
+    closeDropdown(); setPresetPanel(false); setSettingsPanel(false); ehpCloseDd();
   }
+  $('vEhp').addEventListener('click', function () { setView('ehp'); });
   $('vGraphs').addEventListener('click', function () { setView('graphs'); });
   $('vUsers').addEventListener('click', function () { setView('users'); });
 
@@ -1209,7 +1711,7 @@ td.act { text-align: right; width: 1%; }
   if (window.ResizeObserver) new ResizeObserver(function () { draw(); }).observe($('card'));
   else window.addEventListener('resize', draw);
   var mq = window.matchMedia('(prefers-color-scheme: dark)');
-  var themeChanged = function () { renderLegend(); draw(); };
+  var themeChanged = function () { renderLegend(); draw(); renderEhp(); };
   if (mq.addEventListener) mq.addEventListener('change', themeChanged); else if (mq.addListener) mq.addListener(themeChanged);
   new MutationObserver(themeChanged).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 

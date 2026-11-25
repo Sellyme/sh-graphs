@@ -2,3 +2,5 @@ sh-graphs-data.json
 sh-graphs-data.json.tmp
 __pycache__/
 *.zip
+sh-graphs-ehp.json
+sh-graphs-ehp.json.tmp

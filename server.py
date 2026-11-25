@@ -25,8 +25,10 @@ from urllib.parse import urlsplit
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Settings come from the environment so the same file runs on a desktop or in Docker.
 STORE = os.environ.get("SH_DATA_FILE") or os.path.join(HERE, "sh-graphs-data.json")
+# EHP data is large and rarely changes, so it lives in its own file next to the main one.
+EHP_STORE = os.environ.get("SH_EHP_FILE") or os.path.join(os.path.dirname(STORE), "sh-graphs-ehp.json")
 API = "https://steamhunters.com/api/"
-PATH_OK = re.compile(r"^steam-users/\d{1,20}(/statistics)?$")
+PATH_OK = re.compile(r"^steam-users/\d{1,20}(/statistics|/licenses)?$")
 HOST = os.environ.get("SH_HOST", "127.0.0.1")
 if os.environ.get("SH_PORT"):
     PORTS = [int(os.environ["SH_PORT"])]
@@ -75,14 +77,14 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path.startswith("/sh/"):
             sub = url.path[4:]
             if not PATH_OK.match(sub):
-                return self._err(400, "Only steam-users/<id> and steam-users/<id>/statistics are relayed.")
+                return self._err(400, "Only steam-users/<id>, /statistics and /licenses are relayed.")
             target = API + sub + ("?" + url.query if url.query else "")
             req = urllib.request.Request(target, headers={
                 "User-Agent": "sh-graphs/1.0 (personal progress viewer)",
                 "Accept": "application/json",
             })
             try:
-                with urllib.request.urlopen(req, timeout=30) as r:
+                with urllib.request.urlopen(req, timeout=300 if sub.endswith("/licenses") else 30) as r:
                     return self._json(r.status, r.read())
             except urllib.error.HTTPError as e:
                 return self._err(e.code, "Steam Hunters answered HTTP %d." % e.code)
@@ -92,9 +94,9 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == "/healthz":
             return self._json(200, b'{"ok":true}')
 
-        if url.path == "/store":
+        if url.path in ("/store", "/ehp-store"):
             try:
-                with open(STORE, "rb") as f:
+                with open(STORE if url.path == "/store" else EHP_STORE, "rb") as f:
                     data = f.read()
             except FileNotFoundError:
                 data = b"{}"
@@ -111,8 +113,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_PUT(self):
         if not self._host_ok():
             return
-        if urlsplit(self.path).path != "/store":
+        path = urlsplit(self.path).path
+        if path not in ("/store", "/ehp-store"):
             return self.send_error(404)
+        target = STORE if path == "/store" else EHP_STORE
         n = int(self.headers.get("Content-Length") or 0)
         if n > 50_000_000:
             return self._err(413, "Too large.")
@@ -121,10 +125,10 @@ class Handler(SimpleHTTPRequestHandler):
             json.loads(body)
         except ValueError:
             return self._err(400, "Not JSON.")
-        tmp = STORE + ".tmp"
+        tmp = target + ".tmp"
         with open(tmp, "wb") as f:
             f.write(body)
-        os.replace(tmp, STORE)
+        os.replace(tmp, target)
         self._json(200, b'{"ok":true}')
 
 
@@ -141,6 +145,7 @@ def main():
     url = "http://localhost:%d/" % server.server_address[1]
     print("SH Graphs running at %s  (Ctrl+C to stop)" % url, flush=True)
     print("Data file: %s" % STORE, flush=True)
+    print("EHP file:  %s" % EHP_STORE, flush=True)
     if "--no-browser" not in sys.argv and not os.environ.get("SH_NO_BROWSER"):
         webbrowser.open(url)
     # Stop cleanly on `docker stop` (SIGTERM) as well as Ctrl+C.
