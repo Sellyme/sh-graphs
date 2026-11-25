@@ -516,7 +516,14 @@ td.act { text-align: right; width: 1%; }
     }).then(function (arr) {
       var cur = data.get(id);
       if (!cur || cur.req !== req) return;
-      ingestRecords(id, arr);
+      var hasHistory = arr.some(function (r) { return r && typeof r === 'object' && isFinite(Date.parse(r.timestamp)); });
+      if (hasHistory) { ingestRecords(id, arr); return; }
+      // No historical data at all: fall back to the user's current stats.
+      return fetchCurrent(id).then(function (synth) {
+        var c2 = data.get(id);
+        if (!c2 || c2.req !== req) return;
+        ingestRecords(id, synth);
+      });
     }).catch(function (e) {
       var cur = data.get(id);
       if (!cur || cur.req !== req) return;
@@ -524,6 +531,39 @@ td.act { text-align: right; width: 1%; }
       cur.error = (e && e.message && e.message !== 'Failed to fetch') ? e.message : 'Could not reach Steam Hunters.';
       renderLegend(); draw();
     });
+  }
+  // Current-stats field -> historical metric key. Only metrics that cannot have changed for a user with
+  // no updates are mapped. Ranks (and Steam% points / zero-point achievements, which the current API
+  // does not report) are left out, so they stay "No data".
+  var CURRENT_MAP = {
+    points: 'validPoints',
+    agcObtainable: 'validAgcObtainable',
+    playtime: 'playtime',
+    achievementUnlockCount: 'validAchievementUnlockCount',
+    completedGameCount: 'validCompletedGameCount',
+    startedGameCount: 'validStartedGameCount',
+    appCount: 'validAppCount'
+  };
+  function fetchCurrent(id) {
+    var url = (SERVED ? 'sh/' : 'https://steamhunters.com/api/') + 'steam-users/' + id;
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j || typeof j !== 'object') return [];
+      var base = { steamId: j.steamId, _deduced: true };
+      if (j.countryCode) base.countryCode = j.countryCode;
+      var any = false;
+      Object.keys(CURRENT_MAP).forEach(function (k) {
+        if (typeof j[k] === 'number' && isFinite(j[k])) { base[CURRENT_MAP[k]] = j[k]; any = true; }
+      });
+      if (!any) return [];
+      // The same values at both ends of the graph window: start of the API range and now.
+      var a = {}, b = {};
+      for (var k in base) { a[k] = base[k]; b[k] = base[k]; }
+      a.timestamp = API_MIN; b.timestamp = new Date().toISOString();
+      return [a, b];
+    }).catch(function () { return []; });   // a failed fallback just leaves "No data"
   }
   function ingestRecords(id, arr) {
     var recs = [], newMetric = false;
@@ -783,7 +823,7 @@ td.act { text-align: right; width: 1%; }
       if (!d || !d.records.length) return;
       var pts = [];
       d.records.forEach(function (r) { var v = metricValue(m, r); if (v !== null) pts.push({ x: r._t, y: v, rec: r }); });
-      if (pts.length) out.push({ sel: s, pts: pts });
+      if (pts.length) out.push({ sel: s, pts: pts, deduced: pts.every(function (p) { return p.rec._deduced === true; }) });
     });
     return out;
   }
@@ -927,7 +967,9 @@ td.act { text-align: right; width: 1%; }
       var c = seriesColor(s.sel.ci, dark);
       ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath();
       s.pts.forEach(function (p, i) { var X = fx(p.x), Y = fy(p.y); if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y); });
+      if (s.deduced) ctx.setLineDash([8, 6]);   // deduced from current stats, not real history
       ctx.stroke();
+      ctx.setLineDash([]);
       // point markers: same rule for every line, controlled by Settings
       if (showPoints) {
         ctx.fillStyle = c; ctx.strokeStyle = cSurface; ctx.lineWidth = 2;
@@ -975,7 +1017,7 @@ td.act { text-align: right; width: 1%; }
     var pt = hover.s.pts[hover.i], px = fx(pt.x), py = fy(pt.y), m = metric();
     tip.querySelector('.sw').style.setProperty('--c', seriesColor(hover.s.sel.ci, isDark()));
     tip.querySelector('.tn').textContent = nameOf(hover.s.sel.id);
-    tip.querySelector('.td').textContent = fmtFull(pt.x);
+    tip.querySelector('.td').textContent = fmtFull(pt.x) + (pt.rec._deduced ? ' (current stats, no history)' : '');
     tip.querySelector('.tv').textContent = fmtValue(m, pt.y, pt.rec, true);
     tip.hidden = false;
     var w = tip.offsetWidth, h = tip.offsetHeight, cw = cv.clientWidth;

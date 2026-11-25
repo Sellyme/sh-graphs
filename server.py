@@ -26,7 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Settings come from the environment so the same file runs on a desktop or in Docker.
 STORE = os.environ.get("SH_DATA_FILE") or os.path.join(HERE, "sh-graphs-data.json")
 API = "https://steamhunters.com/api/"
-PATH_OK = re.compile(r"^steam-users/\d{1,20}/statistics$")
+PATH_OK = re.compile(r"^steam-users/\d{1,20}(/statistics)?$")
 HOST = os.environ.get("SH_HOST", "127.0.0.1")
 if os.environ.get("SH_PORT"):
     PORTS = [int(os.environ["SH_PORT"])]
@@ -75,7 +75,7 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path.startswith("/sh/"):
             sub = url.path[4:]
             if not PATH_OK.match(sub):
-                return self._err(400, "Only steam-users/<id>/statistics is relayed.")
+                return self._err(400, "Only steam-users/<id> and steam-users/<id>/statistics are relayed.")
             target = API + sub + ("?" + url.query if url.query else "")
             req = urllib.request.Request(target, headers={
                 "User-Agent": "sh-graphs/1.0 (personal progress viewer)",
