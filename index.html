@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/favicon.ico">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SH Graphs</title>
+<style>
+/* Layout: view switcher, metric tabs in three labelled groups, user picker bar, one big chart, legend chips. */
+:root {
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --accent-ink: #1c5cab;
+  --accent-wash: rgba(42, 120, 214, 0.12);
+  --btn: #f0efec;
+  --btn-hover: #e6e5df;
+  --err: #b42323;
+  --ok: #006300;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5; --accent-ink: #86b6ef; --accent-wash: rgba(57, 135, 229, 0.20);
+    --btn: #262625; --btn-hover: #323230; --err: #ec7272; --ok: #0ca30c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+  --accent: #3987e5; --accent-ink: #86b6ef; --accent-wash: rgba(57, 135, 229, 0.20);
+  --btn: #262625; --btn-hover: #323230; --err: #ec7272; --ok: #0ca30c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { height: 100%; }
+body {
+  margin: 0; min-height: 100%;
+  background: var(--page); color: var(--ink);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding-block: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+[hidden] { display: none !important; }
+.app { min-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn {
+  height: 32px; padding: 0 12px; font-size: 13px; white-space: nowrap;
+  background: var(--btn); border: 1px solid var(--border); border-radius: 6px;
+}
+.btn:hover:not(:disabled) { background: var(--btn-hover); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.btn.small { height: 26px; padding: 0 8px; font-size: 12px; }
+.btn.danger { color: var(--err); }
+input[type="text"], input[type="search"] {
+  height: 32px; padding: 0 10px; font-size: 13px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--axis); border-radius: 6px;
+}
+textarea {
+  width: 100%; min-height: 120px; resize: vertical; padding: 8px 10px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--surface); border: 1px solid var(--axis); border-radius: 6px;
+}
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* header */
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+.hright { display: flex; align-items: center; gap: 8px; }
+.views { display: inline-flex; padding: 3px; gap: 2px; background: var(--btn); border: 1px solid var(--border); border-radius: 8px; }
+.views button { border: 0; background: none; height: 28px; padding: 0 14px; border-radius: 6px; font-size: 13px; color: var(--ink2); }
+.views button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+
+/* metric tabs */
+.groups { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.grp { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.grp .gl { flex: none; width: 64px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tabs { display: flex; gap: 4px; overflow-x: auto; min-width: 0; padding-bottom: 2px; scrollbar-width: thin; }
+.tab {
+  flex: none; height: 28px; padding: 0 10px; font-size: 13px; border-radius: 6px;
+  border: 1px solid transparent; background: none; color: var(--ink2);
+}
+.tab:hover { background: var(--btn); color: var(--ink); }
+.tab[aria-selected="true"] { background: var(--accent-wash); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+/* user bar */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.search { position: relative; flex: 1 1 260px; min-width: 0; max-width: 420px; }
+.search input { width: 100%; }
+.dd {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+  max-height: 300px; overflow-y: auto; padding: 4px;
+  background: var(--surface); border: 1px solid var(--axis); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.dd .opt {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px;
+  background: none; border: 0; border-radius: 5px; text-align: left; font-size: 13px;
+}
+.dd .opt:hover, .dd .opt.active { background: var(--btn); }
+.dd .ck { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--axis); border-radius: 4px; display: grid; place-items: center; font-size: 11px; line-height: 1; color: #fff; }
+.dd .opt[aria-selected="true"] .ck { background: var(--accent); border-color: var(--accent); }
+.dd .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd .id { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dd .hint { padding: 8px; font-size: 12px; color: var(--ink2); }
+.spacer { flex: 1 1 0; }
+
+.pop { position: relative; }
+.panel {
+  position: absolute; z-index: 20; right: 0; top: calc(100% + 4px); width: min(320px, calc(100vw - 32px));
+  padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--surface); border: 1px solid var(--axis); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.panel h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.panel .row { display: flex; gap: 6px; }
+.panel .row input { flex: 1; }
+.plist { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+.pitem { display: flex; align-items: center; gap: 6px; }
+.pitem .load { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 6px 8px; border-radius: 5px; font-size: 13px; display: flex; gap: 8px; }
+.pitem .load:hover { background: var(--btn); }
+.pitem .load span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pitem .load span:last-child { margin-left: auto; color: var(--muted); font-size: 12px; flex: none; }
+.pitem .x { background: none; border: 0; color: var(--ink2); padding: 4px 8px; border-radius: 5px; font-size: 15px; line-height: 1; }
+.pitem .x:hover { background: var(--btn); color: var(--err); }
+.muted { color: var(--ink2); font-size: 12px; }
+
+/* chart */
+.chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.chart-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+.chart-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; position: relative; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.switch .track { position: relative; width: 30px; height: 18px; border-radius: 999px; background: var(--axis); transition: background 0.15s; }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(12px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .switch .track, .switch .track::after { transition: none; } }
+.zoom { display: flex; gap: 6px; }
+.card {
+  position: relative; flex: 1 1 auto; min-height: 340px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+}
+canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.empty {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px; text-align: center; pointer-events: none;
+}
+.empty strong { font-size: 15px; font-weight: 600; }
+.empty span { font-size: 13px; color: var(--ink2); max-width: 52ch; }
+.tip {
+  position: absolute; z-index: 2; pointer-events: none; min-width: 160px; max-width: 280px;
+  padding: 8px 10px; background: var(--surface); border: 1px solid var(--axis); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14); font-size: 12px;
+}
+.tip .tl { display: flex; align-items: center; gap: 6px; font-weight: 600; word-break: break-word; }
+.tip .td { color: var(--ink2); margin-top: 2px; }
+.tip .tv { margin-top: 4px; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.sw { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--accent)); border: 2px solid var(--c, var(--accent)); }
+.off .sw { background: transparent; }
+
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip { display: inline-flex; align-items: stretch; max-width: 100%; background: var(--btn); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.chip .tog { background: none; border: 0; padding: 6px 10px; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.chip .tog:hover { background: var(--btn-hover); }
+.chip .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .ct { color: var(--ink2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip .ct.err { color: var(--err); }
+.chip.off .nm { color: var(--ink2); text-decoration: line-through; font-weight: 400; }
+.chip .side { background: none; border: 0; border-left: 1px solid var(--border); padding: 6px 9px; color: var(--ink2); font-size: 13px; line-height: 1; }
+.chip .side:hover { background: var(--btn-hover); color: var(--ink); }
+.spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--axis); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+
+.status { min-height: 18px; font-size: 13px; color: var(--ink2); }
+.status.err { color: var(--err); }
+.banner { padding: 8px 12px; border: 1px solid var(--axis); border-radius: 8px; font-size: 13px; color: var(--ink2); background: var(--surface); }
+.banner code { font-size: 12px; }
+
+/* users page */
+.users-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.users-tools input { flex: 1 1 220px; max-width: 360px; }
+.box { padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.box p { margin: 0; font-size: 13px; color: var(--ink2); }
+.box pre { margin: 0; padding: 10px; overflow-x: auto; font-size: 12px; background: var(--page); border: 1px solid var(--border); border-radius: 6px; }
+.box .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.id { font-variant-numeric: tabular-nums; color: var(--ink2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+td.act { text-align: right; width: 1%; }
+.tdempty { padding: 24px; text-align: center; color: var(--ink2); }
+
+@media (max-width: 560px) {
+  .grp { flex-direction: column; align-items: stretch; gap: 2px; }
+  .grp .gl { width: auto; }
+  .card { min-height: 300px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>SH Graphs</h1>
+    <div class="hright">
+      <div class="views" role="tablist" aria-label="Page">
+        <button role="tab" id="vGraphs" aria-selected="true">Graphs</button>
+        <button role="tab" id="vUsers" aria-selected="false">Users</button>
+      </div>
+      <div class="pop" id="settingsWrap">
+        <button class="btn" id="settingsBtn" aria-expanded="false" aria-controls="settingsPanel">Settings</button>
+        <div class="panel" id="settingsPanel" hidden>
+          <h3>Settings</h3>
+          <label class="switch">
+            <input type="checkbox" id="pointsToggle">
+            <span class="track" aria-hidden="true"></span>
+            <span>Show data point markers</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="banner" id="offlineBanner" hidden>
+    This page was opened as a file, so it may not be allowed to reach Steam Hunters and nothing is saved to the data file.
+    Start it with <code>python3 server.py</code> instead.
+  </div>
+
+  <!-- ===== Graphs view ===== -->
+  <section id="graphsView" class="app" style="min-height:0; flex:1 1 auto">
+    <nav class="groups" id="groups" aria-label="Metric"></nav>
+
+    <div class="bar">
+      <div class="search" id="searchWrap">
+        <input type="search" id="search" placeholder="Add users by name or Steam ID" autocomplete="off" spellcheck="false"
+               role="combobox" aria-expanded="false" aria-controls="dd" aria-autocomplete="list">
+        <div class="dd" id="dd" role="listbox" aria-multiselectable="true" hidden></div>
+      </div>
+      <div class="pop" id="presetWrap">
+        <button class="btn" id="presetBtn" aria-expanded="false" aria-controls="presetPanel">Presets</button>
+        <div class="panel" id="presetPanel" hidden>
+          <h3>Save current selection</h3>
+          <div class="row">
+            <input type="text" id="presetName" placeholder="Preset name" autocomplete="off">
+            <button class="btn primary" id="presetSave">Save</button>
+          </div>
+          <h3>Saved presets</h3>
+          <div class="plist" id="presetList"></div>
+        </div>
+      </div>
+      <button class="btn" id="refreshBtn" title="Fetch fresh data for every selected user">Refresh data</button>
+      <span class="spacer"></span>
+      <div class="zoom">
+        <button class="btn" id="backBtn" disabled>Zoom back</button>
+        <button class="btn" id="resetBtn" disabled>Reset zoom</button>
+      </div>
+    </div>
+
+    <div class="chart-head">
+      <h2 id="chartTitle">Points</h2>
+      <div class="chart-tools">
+        <span class="muted">Drag a box on the chart to zoom. Double-click to reset.</span>
+        <label class="switch" id="baseSwitch">
+          <input type="checkbox" id="baseToggle">
+          <span class="track" aria-hidden="true"></span>
+          <span id="baseLabel">Start at 0</span>
+        </label>
+      </div>
+    </div>
+
+    <section class="card" id="card">
+      <canvas id="cv" role="img" aria-label="Line graph"></canvas>
+      <div class="empty" id="empty">
+        <strong id="emptyTitle">Pick users to graph</strong>
+        <span id="emptyText">Type a name in the search box above. Names come from the user list on the Users page.</span>
+      </div>
+      <div class="tip" id="tip" hidden>
+        <div class="tl"><i class="sw"></i><span class="tn"></span></div>
+        <div class="td"></div>
+        <div class="tv"></div>
+      </div>
+    </section>
+
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <!-- ===== Users view ===== -->
+  <section id="usersView" class="app" style="min-height:0" hidden>
+    <div class="users-tools">
+      <input type="search" id="userFilter" placeholder="Filter by name or ID" autocomplete="off" spellcheck="false" aria-label="Filter users">
+      <button class="btn primary" id="importBtn" aria-expanded="false" aria-controls="importBox">Import</button>
+      <button class="btn small" id="snippetBtn" aria-expanded="false" aria-controls="snippetBox" title="How to get a user list">?</button>
+      <button class="btn" id="exportBtn">Copy as JSON</button>
+      <span class="spacer"></span>
+      <span class="muted" id="userCount"></span>
+    </div>
+
+    <div class="box" id="snippetBox" hidden>
+      <p>Use this code snippet to extract ID&lt;-&gt;username links from a list of SH users</p>
+      <pre id="snippetCode">users = sh.model.listData.pagedList.items; user_data = []; for(n in users) {i = users[n]; user_data.push({'id':i['steamId'],'name':i['name']})}</pre>
+      <div class="row"><button class="btn small" id="snippetCopy">Copy snippet</button></div>
+    </div>
+
+    <div class="box" id="importBox" hidden>
+      <p>Paste an array of <code>{"id": "...", "name": "..."}</code> objects. Existing IDs get their name updated.</p>
+      <textarea id="importText" spellcheck="false" aria-label="User list to import" placeholder='[{"id": "76561198022564688", "name": "FrozenShiver"}]'></textarea>
+      <div class="row">
+        <button class="btn primary" id="importGo">Import users</button>
+        <button class="btn" id="importClose">Close</button>
+      </div>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Steam ID</th><th></th></tr></thead>
+        <tbody id="userRows"></tbody>
+      </table>
+    </div>
+    <div class="row" style="display:flex; gap:8px">
+      <button class="btn danger" id="clearUsers">Delete all users</button>
+    </div>
+  </section>
+
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+  var LS_KEY = 'sh-graphs-v1';
+  var SERVED = /^https?:$/.test(location.protocol);
+  var API_MIN = '2024-01-01T00:00:00.000Z';
+  var STALE_MS = 10 * 60 * 1000;
+
+  // ================= Metrics =================
+  var KNOWN = [
+    { key: 'validPoints', name: 'Points', unit: 'points' },
+    { key: 'validSteamPoints', name: 'Steam% Points', unit: 'Steam% points' },
+    { key: 'validAgcObtainable', name: 'AGC', kind: 'pct', unit: 'AGC' },
+    { key: 'playtime', name: 'Playtime', kind: 'hours', unit: 'hours' },
+    { key: 'validAchievementUnlockCount', name: 'Achievements Unlocked', unit: 'achievements' },
+    { key: 'validZeroPointsAchievementUnlockCount', name: 'Zero-Point Achievements', unit: 'zero-point achievements' },
+    { key: 'validCompletedGameCount', name: 'Completed Games', unit: 'completions' },
+    { key: 'validStartedGameCount', name: 'Started Games', unit: 'started games' },
+    { key: 'validAppCount', name: 'Apps owned', unit: 'apps owned' },
+    { key: 'pointsRank', name: 'Points Rank' },
+    { key: 'steamPointsRank', name: 'Steam% Points Rank' },
+    { key: 'achievementUnlockCountRank', name: 'Achievements Rank' },
+    { key: 'completedGameCountRank', name: 'Completed Games Rank' },
+    { key: 'countryPointsRank', name: 'Country Points Rank', country: true },
+    { key: 'countrySteamPointsRank', name: 'Country Steam% Points Rank', country: true },
+    { key: 'countryAchievementUnlockCountRank', name: 'Country Achievements Rank', country: true },
+    { key: 'countryCompletedGameCountRank', name: 'Country Completed Games Rank', country: true }
+  ];
+  var GROUPS = [{ id: 'general', label: 'General' }, { id: 'counts', label: 'Counts' }, { id: 'ranks', label: 'Ranks' }];
+  var SKIP = /^(steamId|timestamp|countryCode|name)$/;
+
+  function groupOf(key) { return /Rank$/.test(key) ? 'ranks' : /Count$/.test(key) ? 'counts' : 'general'; }
+  function humanize(key) {
+    var s = key.replace(/^valid(?=[A-Z])/, '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/\bAgc\b/g, 'AGC');
+    if (/Count$/.test(key)) s = s.replace(/ Count$/, '');
+    s = s.replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+    return s;
+  }
+  var METRICS = [], MBYKEY = {};
+  function addMetric(m) {
+    if (MBYKEY[m.key]) return false;
+    m.group = groupOf(m.key);
+    if (m.group === 'ranks') m.kind = 'rank';
+    if (!m.kind) m.kind = 'count';
+    if (!m.unit) m.unit = m.name.toLowerCase();
+    METRICS.push(m); MBYKEY[m.key] = m;
+    return true;
+  }
+  KNOWN.forEach(addMetric);
+  function discoverMetrics(rec) {
+    var changed = false;
+    Object.keys(rec).forEach(function (k) {
+      if (SKIP.test(k) || /invalid/i.test(k) || typeof rec[k] !== 'number') return;
+      if (addMetric({ key: k, name: humanize(k) })) changed = true;
+    });
+    return changed;
+  }
+  function metricValue(m, rec) {
+    var v = rec[m.key];
+    if (typeof v !== 'number' || !isFinite(v)) return null;
+    return m.kind === 'hours' ? v / 60 : v;
+  }
+  function isIntMetric(m) { return m.kind === 'count' || m.kind === 'rank'; }
+  function fmtValue(m, v, rec, precise) {
+    if (m.kind === 'rank') return '#' + Math.round(v).toLocaleString() + (m.country ? ' in ' + ((rec && rec.countryCode) || 'country') : ' worldwide');
+    if (m.kind === 'pct') return v.toFixed(2) + '% ' + m.unit;
+    if (m.kind === 'hours') return v.toLocaleString(undefined, { maximumFractionDigits: precise ? 1 : 0 }) + ' hours';
+    return Math.round(v).toLocaleString() + ' ' + m.unit;
+  }
+  function fmtAxis(m, v, dec) {
+    var s = v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    if (m.kind === 'pct') return s + '%';
+    if (m.kind === 'hours') return s + ' h';
+    if (m.kind === 'rank') return '#' + s;
+    return s;
+  }
+
+  // ================= Colours (fixed order, kept per user) =================
+  var SLOTS = [
+    ['#2a78d6', '#3987e5'], ['#eb6834', '#d95926'], ['#1baf7a', '#199e70'], ['#eda100', '#c98500'],
+    ['#e87ba4', '#d55181'], ['#008300', '#008300'], ['#6250d6', '#9085e9'], ['#e34948', '#e66767']
+  ];
+  function seriesColor(i, dark) {
+    if (i < SLOTS.length) return SLOTS[i][dark ? 1 : 0];
+    var h = ((i - SLOTS.length) * 137.508 + 25) % 360;
+    return 'hsl(' + h.toFixed(1) + ', 62%, ' + (dark ? 62 : 46) + '%)';
+  }
+  function isDark() { return getComputedStyle(document.documentElement).colorScheme.indexOf('dark') >= 0; }
+
+  // ================= State =================
+  var users = new Map();          // id -> name (saved associations)
+  var presets = [];               // {name, ids:[]}
+  var selection = [];             // {id, ci, visible}
+  var metricKey = 'validPoints';
+  var showPoints = true;          // draw a circle at every data point on every line
+  var zeroBase = {};              // metric key -> true when its y-axis starts at 0 (1 for ranks)
+  var FLIP = false;               // rank metrics draw with 1 at the top
+  var data = new Map();           // id -> {status:'loading'|'ok'|'error', records:[], error, fetchedAt, req}
+  var view = null, zoomStack = [], hover = null, drag = null;
+  var V = null, P = { l: 0, t: 0, r: 0, b: 0 }, INSET = 10;
+
+  function nameOf(id) { return users.get(id) || id; }
+  function selected(id) { return selection.some(function (s) { return s.id === id; }); }
+  function metric() { return MBYKEY[metricKey] || METRICS[0]; }
+
+  // ================= Persistence =================
+  function snapshot() {
+    var u = [];
+    users.forEach(function (name, id) { u.push({ id: id, name: name }); });
+    u.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    return { version: 1, users: u, presets: presets, selection: selection, metric: metricKey, zeroBase: zeroBase, showPoints: showPoints };
+  }
+  function applyStore(d) {
+    users = new Map();
+    (d.users || []).forEach(function (u) { if (u && u.id) users.set(String(u.id), String(u.name || u.id)); });
+    presets = Array.isArray(d.presets) ? d.presets.filter(function (p) { return p && p.name && Array.isArray(p.ids); }) : [];
+    selection = Array.isArray(d.selection) ? d.selection.filter(function (s) { return s && s.id; }).map(function (s) {
+      return { id: String(s.id), ci: +s.ci || 0, visible: s.visible !== false };
+    }) : [];
+    if (d.metric) metricKey = d.metric;
+    showPoints = d.showPoints !== false;
+    zeroBase = (d.zeroBase && typeof d.zeroBase === 'object') ? d.zeroBase : {};
+  }
+  var saveTimer = 0, saveWarned = false;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      var body = JSON.stringify(snapshot(), null, 1);
+      try { localStorage.setItem(LS_KEY, body); } catch (e) { /* storage unavailable */ }
+      if (!SERVED) return;
+      fetch('store', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: body })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); saveWarned = false; })
+        .catch(function () { if (!saveWarned) { saveWarned = true; say('Could not save to the data file. Is server.py still running?', true); } });
+    }, 250);
+  }
+  function load() {
+    var fromLocal = function () {
+      try { var raw = localStorage.getItem(LS_KEY); if (raw) applyStore(JSON.parse(raw)); } catch (e) { /* ignore */ }
+    };
+    if (!SERVED) { fromLocal(); return Promise.resolve(); }
+    return fetch('store', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && (d.users || d.selection)) applyStore(d); else fromLocal();
+    }).catch(fromLocal);
+  }
+
+  // ================= Fetching =================
+  function apiUrl(id) {
+    var max = new Date(Date.now() + 864e5).toISOString();
+    var qs = 'min=' + API_MIN + '&max=' + max;
+    return (SERVED ? 'sh/' : 'https://steamhunters.com/api/') + 'steam-users/' + id + '/statistics?' + qs;
+  }
+  function fetchUser(id, force) {
+    var d = data.get(id);
+    if (!force && d && (d.status === 'loading' || (d.status === 'ok' && Date.now() - d.fetchedAt < STALE_MS))) return;
+    var req = (d && d.req || 0) + 1;
+    d = { status: 'loading', records: d ? d.records : [], error: '', fetchedAt: d ? d.fetchedAt : 0, req: req };
+    data.set(id, d);
+    renderLegend();
+    fetch(apiUrl(id), { cache: 'no-store' }).then(function (r) {
+      return r.text().then(function (t) {
+        var j = null;
+        try { j = JSON.parse(t); } catch (e) { /* not JSON */ }
+        if (!r.ok) throw new Error((j && j.error) || ('Steam Hunters answered HTTP ' + r.status + '.'));
+        if (!Array.isArray(j)) throw new Error('Unexpected reply from Steam Hunters.');
+        return j;
+      });
+    }).then(function (arr) {
+      var cur = data.get(id);
+      if (!cur || cur.req !== req) return;
+      ingestRecords(id, arr);
+    }).catch(function (e) {
+      var cur = data.get(id);
+      if (!cur || cur.req !== req) return;
+      cur.status = 'error';
+      cur.error = (e && e.message && e.message !== 'Failed to fetch') ? e.message : 'Could not reach Steam Hunters.';
+      renderLegend(); draw();
+    });
+  }
+  function ingestRecords(id, arr) {
+    var recs = [], newMetric = false;
+    arr.forEach(function (r) {
+      if (!r || typeof r !== 'object' /* || r.isInvalidated === true */) return; //allow invalidated users - important for Apps Owned
+      var t = Date.parse(r.timestamp);
+      if (!isFinite(t)) return;
+      if (discoverMetrics(r)) newMetric = true;
+      var copy = {}; for (var k in r) copy[k] = r[k];
+      copy._t = t;
+      recs.push(copy);
+    });
+    recs.sort(function (a, b) { return a._t - b._t; });
+    var cur = data.get(id) || { req: 0 };
+    cur.status = 'ok'; cur.records = recs; cur.error = ''; cur.fetchedAt = Date.now();
+    data.set(id, cur);
+    if (newMetric) renderTabs();
+    view = null; zoomStack.length = 0;
+    renderLegend(); syncZoom(); draw();
+  }
+
+  // ================= Selection =================
+  function nextColorIndex() {
+    var used = {}; selection.forEach(function (s) { used[s.ci] = true; });
+    for (var i = 0; ; i++) if (!used[i]) return i;
+  }
+  function addUser(id) {
+    if (selected(id)) return;
+    selection.push({ id: id, ci: nextColorIndex(), visible: true });
+    fetchUser(id);
+    afterSelectionChange();
+  }
+  function removeUser(id) {
+    selection = selection.filter(function (s) { return s.id !== id; });
+    afterSelectionChange(selection.length > 0); // keep the zoom window while other users remain
+  }
+  function toggleUser(id) { if (selected(id)) removeUser(id); else addUser(id); }
+  function afterSelectionChange(keepZoom) {
+    if (!keepZoom) { view = null; zoomStack.length = 0; }
+    hover = null; hideTip();
+    save(); renderLegend(); syncZoom(); draw();
+    if (!$('dd').hidden) renderDropdown();
+  }
+  function setSelection(ids) {
+    selection = [];
+    ids.forEach(function (id) { if (!selected(id)) selection.push({ id: id, ci: selection.length, visible: true }); });
+    ids.forEach(function (id) { fetchUser(id); });
+    afterSelectionChange();
+  }
+
+  // ================= Metric tabs =================
+  function renderTabs() {
+    var box = $('groups'); box.textContent = '';
+    GROUPS.forEach(function (g) {
+      var ms = METRICS.filter(function (m) { return m.group === g.id; });
+      if (!ms.length) return;
+      var row = document.createElement('div'); row.className = 'grp';
+      var gl = document.createElement('span'); gl.className = 'gl'; gl.textContent = g.label; gl.id = 'gl-' + g.id;
+      var tabs = document.createElement('div'); tabs.className = 'tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-labelledby', gl.id);
+      ms.forEach(function (m) {
+        var b = document.createElement('button');
+        b.className = 'tab'; b.type = 'button'; b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', m.key === metricKey ? 'true' : 'false');
+        b.textContent = g.id === 'ranks' ? m.name.replace(/ Rank$/, '') : m.name;
+        b.title = m.name;
+        b.addEventListener('click', function () { setMetric(m.key); });
+        tabs.appendChild(b);
+      });
+      row.appendChild(gl); row.appendChild(tabs); box.appendChild(row);
+    });
+  }
+  function setMetric(key) {
+    metricKey = key;
+    view = null; zoomStack.length = 0; hover = null; hideTip();
+    save(); renderTabs(); renderLegend(); syncZoom(); draw();
+  }
+
+  // ================= Search dropdown =================
+  var ddItems = [], ddActive = -1;
+  function matches(q) {
+    q = q.trim().toLowerCase();
+    var out = [];
+    users.forEach(function (name, id) {
+      var n = name.toLowerCase();
+      if (!q || n.indexOf(q) >= 0 || id.indexOf(q) === 0) out.push({ id: id, name: name, rank: !q ? 1 : n.indexOf(q) === 0 ? 0 : 1 });
+    });
+    out.sort(function (a, b) { return a.rank - b.rank || a.name.localeCompare(b.name); });
+    return out.slice(0, 100);
+  }
+  function renderDropdown() {
+    var dd = $('dd'), q = $('search').value.trim();
+    dd.textContent = '';
+    ddItems = matches(q);
+    if (/^\d{17}$/.test(q) && !users.has(q)) ddItems.unshift({ id: q, name: 'Steam ID ' + q, raw: true });
+    if (!ddItems.length) {
+      var h = document.createElement('div'); h.className = 'hint';
+      h.textContent = users.size ? 'No saved user matches "' + q + '". You can also type a 17-digit Steam ID.' : 'No saved users yet. Import a user list on the Users page, or type a 17-digit Steam ID.';
+      dd.appendChild(h);
+    }
+    if (ddActive >= ddItems.length) ddActive = ddItems.length - 1;
+    ddItems.forEach(function (it, i) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'opt' + (i === ddActive ? ' active' : ''); b.id = 'opt' + i;
+      b.setAttribute('role', 'option'); b.setAttribute('aria-selected', selected(it.id) ? 'true' : 'false');
+      b.tabIndex = -1;
+      var ck = document.createElement('span'); ck.className = 'ck'; ck.textContent = selected(it.id) ? '✓' : '';
+      var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = it.name;
+      b.appendChild(ck); b.appendChild(nm);
+      if (!it.raw) { var idn = document.createElement('span'); idn.className = 'id'; idn.textContent = it.id; b.appendChild(idn); }
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep focus in the search box
+      b.addEventListener('click', function () { ddActive = i; toggleUser(it.id); $('search').focus(); });
+      dd.appendChild(b);
+    });
+    if (ddActive >= 0) $('search').setAttribute('aria-activedescendant', 'opt' + ddActive); else $('search').removeAttribute('aria-activedescendant');
+  }
+  function openDropdown() { $('dd').hidden = false; $('search').setAttribute('aria-expanded', 'true'); renderDropdown(); }
+  function closeDropdown() { $('dd').hidden = true; $('search').setAttribute('aria-expanded', 'false'); ddActive = -1; }
+  $('search').addEventListener('focus', openDropdown);
+  $('search').addEventListener('click', function () { if ($('dd').hidden) openDropdown(); });
+  $('search').addEventListener('input', function () { ddActive = $('search').value.trim() ? 0 : -1; openDropdown(); });
+  $('search').addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if ($('dd').hidden) openDropdown();
+      if (!ddItems.length) return;
+      ddActive = (ddActive + (e.key === 'ArrowDown' ? 1 : -1) + ddItems.length) % ddItems.length;
+      renderDropdown();
+      var el = $('opt' + ddActive); if (el) el.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      var it = ddItems[ddActive >= 0 ? ddActive : 0];
+      if (it) toggleUser(it.id);
+    } else if (e.key === 'Escape') { closeDropdown(); }
+  });
+  document.addEventListener('pointerdown', function (e) {
+    if (!$('dd').hidden && !$('searchWrap').contains(e.target)) closeDropdown();
+    if (!$('presetPanel').hidden && !$('presetWrap').contains(e.target)) setPresetPanel(false);
+    if (!$('settingsPanel').hidden && !$('settingsWrap').contains(e.target)) setSettingsPanel(false);
+  });
+
+  // ================= Settings =================
+  function setSettingsPanel(open) {
+    $('settingsPanel').hidden = !open;
+    $('settingsBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) $('pointsToggle').checked = showPoints;
+  }
+  $('settingsBtn').addEventListener('click', function () { setSettingsPanel($('settingsPanel').hidden); });
+  $('settingsPanel').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { setSettingsPanel(false); $('settingsBtn').focus(); }
+  });
+  $('pointsToggle').addEventListener('change', function () { showPoints = this.checked; save(); draw(); });
+  document.addEventListener('focusin', function (e) {
+    if (!$('dd').hidden && !$('searchWrap').contains(e.target)) closeDropdown();
+  });
+
+  // ================= Presets =================
+  function setPresetPanel(open) {
+    $('presetPanel').hidden = !open;
+    $('presetBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) { renderPresets(); $('presetName').focus(); }
+  }
+  function renderPresets() {
+    var box = $('presetList'); box.textContent = '';
+    if (!presets.length) { var m = document.createElement('div'); m.className = 'muted'; m.textContent = 'No presets yet.'; box.appendChild(m); return; }
+    presets.forEach(function (p, i) {
+      var row = document.createElement('div'); row.className = 'pitem';
+      var ld = document.createElement('button'); ld.className = 'load'; ld.type = 'button';
+      var a = document.createElement('span'); a.textContent = p.name;
+      var b = document.createElement('span'); b.textContent = p.ids.length + (p.ids.length === 1 ? ' user' : ' users');
+      ld.title = p.ids.map(nameOf).join(', ');
+      ld.appendChild(a); ld.appendChild(b);
+      ld.addEventListener('click', function () { setSelection(p.ids.slice()); setPresetPanel(false); say('Loaded preset "' + p.name + '".'); });
+      var x = document.createElement('button'); x.className = 'x'; x.type = 'button'; x.textContent = '×';
+      x.setAttribute('aria-label', 'Delete preset ' + p.name); x.title = 'Delete preset';
+      x.addEventListener('click', function () { presets.splice(i, 1); save(); renderPresets(); say('Deleted preset "' + p.name + '".'); });
+      row.appendChild(ld); row.appendChild(x); box.appendChild(row);
+    });
+  }
+  function savePreset() {
+    var name = $('presetName').value.trim();
+    if (!selection.length) { say('Select some users before saving a preset.', true); return; }
+    if (!name) { say('Give the preset a name.', true); $('presetName').focus(); return; }
+    var ids = selection.map(function (s) { return s.id; });
+    var ex = presets.filter(function (p) { return p.name === name; })[0];
+    if (ex) ex.ids = ids; else presets.push({ name: name, ids: ids });
+    presets.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    $('presetName').value = '';
+    save(); renderPresets();
+    say((ex ? 'Updated' : 'Saved') + ' preset "' + name + '".');
+  }
+  $('presetBtn').addEventListener('click', function () { setPresetPanel($('presetPanel').hidden); });
+  $('presetSave').addEventListener('click', savePreset);
+  $('presetName').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); savePreset(); }
+    else if (e.key === 'Escape') { setPresetPanel(false); $('presetBtn').focus(); }
+  });
+  $('refreshBtn').addEventListener('click', function () {
+    if (!selection.length) { say('No users selected.'); return; }
+    selection.forEach(function (s) { fetchUser(s.id, true); });
+    say('Refreshing ' + selection.length + (selection.length === 1 ? ' user.' : ' users.'));
+  });
+
+  // ================= Legend =================
+  function latest(m, recs) {
+    for (var i = recs.length - 1; i >= 0; i--) { var v = metricValue(m, recs[i]); if (v !== null) return { v: v, rec: recs[i] }; }
+    return null;
+  }
+  function renderLegend() {
+    var box = $('legend'), dark = isDark(), m = metric();
+    box.textContent = '';
+    selection.forEach(function (s) {
+      var d = data.get(s.id);
+      var chip = document.createElement('div'); chip.className = 'chip' + (s.visible ? '' : ' off');
+      var tog = document.createElement('button'); tog.className = 'tog'; tog.type = 'button';
+      tog.setAttribute('aria-pressed', s.visible ? 'true' : 'false');
+      tog.title = s.visible ? 'Hide from graph' : 'Show on graph';
+      var sw = document.createElement('i'); sw.className = 'sw'; sw.style.setProperty('--c', seriesColor(s.ci, dark));
+      var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = nameOf(s.id);
+      var ct = document.createElement('span'); ct.className = 'ct';
+      if (d && d.status === 'loading' && !d.records.length) { var sp = document.createElement('i'); sp.className = 'spin'; ct.appendChild(sp); ct.appendChild(document.createTextNode(' Loading')); }
+      else if (d && d.status === 'error') { ct.className = 'ct err'; ct.textContent = d.error; }
+      else if (d) {
+        var l = latest(m, d.records);
+        ct.textContent = l ? fmtValue(m, l.v, l.rec) : 'No data';
+        if (d.status === 'loading') { var sp2 = document.createElement('i'); sp2.className = 'spin'; sp2.style.marginLeft = '6px'; ct.appendChild(sp2); }
+      }
+      tog.appendChild(sw); tog.appendChild(nm); tog.appendChild(ct);
+      tog.addEventListener('click', function () { s.visible = !s.visible; hover = null; hideTip(); save(); renderLegend(); syncZoom(); draw(); });
+      chip.appendChild(tog);
+      if (d && d.status === 'error') {
+        var rt = document.createElement('button'); rt.className = 'side'; rt.type = 'button'; rt.textContent = 'Retry';
+        rt.addEventListener('click', function () { fetchUser(s.id, true); });
+        chip.appendChild(rt);
+      }
+      var rm = document.createElement('button'); rm.className = 'side'; rm.type = 'button'; rm.textContent = '×';
+      rm.style.fontSize = '15px';
+      rm.setAttribute('aria-label', 'Remove ' + nameOf(s.id) + ' from selection'); rm.title = 'Remove from selection';
+      rm.addEventListener('click', function () { removeUser(s.id); });
+      chip.appendChild(rm);
+      box.appendChild(chip);
+    });
+    if (selection.length) {
+      var ca = document.createElement('button'); ca.className = 'btn small'; ca.type = 'button';
+      ca.textContent = 'Clear all'; ca.title = 'Remove every user from the graph';
+      ca.addEventListener('click', function () { selection = []; afterSelectionChange(); say('Cleared the selection.'); });
+      box.appendChild(ca);
+    }
+    updateEmpty();
+  }
+
+  // ================= Chart =================
+  function visibleSeries() {
+    var m = metric(), out = [];
+    selection.forEach(function (s) {
+      if (!s.visible) return;
+      var d = data.get(s.id);
+      if (!d || !d.records.length) return;
+      var pts = [];
+      d.records.forEach(function (r) { var v = metricValue(m, r); if (v !== null) pts.push({ x: r._t, y: v, rec: r }); });
+      if (pts.length) out.push({ sel: s, pts: pts });
+    });
+    return out;
+  }
+  function updateEmpty() {
+    var e = $('empty'), t = $('emptyTitle'), x = $('emptyText');
+    var vs = visibleSeries();
+    if (vs.length) { e.hidden = true; return; }
+    e.hidden = false;
+    if (!selection.length) { t.textContent = 'Pick users to graph'; x.textContent = 'Type a name in the search box above. Names come from the user list on the Users page.'; }
+    else if (selection.some(function (s) { var d = data.get(s.id); return d && d.status === 'loading'; })) { t.textContent = 'Loading data'; x.textContent = 'Fetching statistics from Steam Hunters.'; }
+    else if (!selection.some(function (s) { return s.visible; })) { t.textContent = 'All users are hidden'; x.textContent = 'Click a name below the chart to show it again.'; }
+    else { t.textContent = 'No data for this metric'; x.textContent = 'The selected users have no values for ' + metric().name + ' yet.'; }
+  }
+
+  function niceTicks(a, b, n, intOnly) {
+    if (!(b > a)) return { ticks: [a], dec: 0 };
+    var raw = (b - a) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag;
+    var step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    if (intOnly && step < 1) step = 1;
+    var dec = Math.max(0, Math.min(8, -Math.floor(Math.log10(step) + 1e-9)));
+    var out = [], first = Math.ceil(a / step - 1e-9);
+    for (var k = first; k * step <= b + step * 1e-9 && out.length < 100; k++) out.push(+(k * step).toFixed(dec));
+    return { ticks: out, dec: dec };
+  }
+  var S = 1e3, M = 6e4, H = 36e5, D = 864e5, CANDS = [];
+  [S, 5 * S, 15 * S, 30 * S, M, 5 * M, 15 * M, 30 * M, H, 2 * H, 3 * H, 6 * H, 12 * H].forEach(function (n) { CANDS.push({ kind: 'ms', n: n, ms: n }); });
+  [1, 2, 7].forEach(function (n) { CANDS.push({ kind: 'day', n: n, ms: n * D }); });
+  [1, 2, 3, 6].forEach(function (n) { CANDS.push({ kind: 'month', n: n, ms: n * 30.44 * D }); });
+  [1, 2, 5, 10].forEach(function (n) { CANDS.push({ kind: 'year', n: n, ms: n * 365.25 * D }); });
+  function timeTicks(x0, x1, target) {
+    var span = x1 - x0, c = CANDS[CANDS.length - 1];
+    for (var i = 0; i < CANDS.length; i++) if (span / CANDS[i].ms <= target) { c = CANDS[i]; break; }
+    var out = [], d;
+    if (c.kind === 'ms') {
+      var off = new Date(x0).getTimezoneOffset() * 6e4;
+      for (var t = Math.ceil((x0 - off) / c.n) * c.n + off; t <= x1 && out.length < 400; t += c.n) out.push(t);
+    } else if (c.kind === 'day') {
+      d = new Date(x0); d.setHours(0, 0, 0, 0);
+      while (d.getTime() < x0) d.setDate(d.getDate() + 1);
+      for (; d.getTime() <= x1 && out.length < 400; d.setDate(d.getDate() + c.n)) out.push(d.getTime());
+    } else if (c.kind === 'month') {
+      d = new Date(x0); d.setDate(1); d.setHours(0, 0, 0, 0);
+      while (d.getTime() < x0 || d.getMonth() % c.n !== 0) d.setMonth(d.getMonth() + 1);
+      for (; d.getTime() <= x1 && out.length < 400; d.setMonth(d.getMonth() + c.n)) out.push(d.getTime());
+    } else {
+      d = new Date(x0); d.setMonth(0, 1); d.setHours(0, 0, 0, 0);
+      while (d.getTime() < x0 || d.getFullYear() % c.n !== 0) d.setFullYear(d.getFullYear() + 1);
+      for (; d.getTime() <= x1 && out.length < 400; d.setFullYear(d.getFullYear() + c.n)) out.push(d.getTime());
+    }
+    return { ticks: out, cand: c, span: span };
+  }
+  function fmtTick(t, c, span) {
+    var d = new Date(t);
+    if (c.kind === 'ms') {
+      var base = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return span > D ? d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + base : base;
+    }
+    if (c.kind === 'day') return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+    if (c.kind === 'month') return d.toLocaleDateString([], { month: 'short', year: 'numeric' });
+    return String(d.getFullYear());
+  }
+  function fmtFull(t) { return new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); }
+
+  var series = [];
+  function bounds() {
+    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    series.forEach(function (s) {
+      s.pts.forEach(function (p) {
+        if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+      });
+    });
+    if (!isFinite(x0)) return null;
+    if (x0 === x1) { x0 -= D; x1 += D; }
+    if (y0 === y1) { var d = Math.abs(y0) * 0.01 || 1; y0 -= d; y1 += d; }
+    var bm = metric();
+    if (zeroBase[bm.key]) {
+      var floor = bm.kind === 'rank' ? 1 : 0;
+      if (y0 > floor) y0 = floor;
+      if (y1 <= y0) y1 = y0 + 1;
+    }
+    return { x0: x0, x1: x1, y0: y0, y1: y1 };
+  }
+  function fx(x) { var a = P.l + INSET, b = P.r - INSET; return a + (x - V.x0) / (V.x1 - V.x0) * (b - a); }
+  function fy(y) { var a = FLIP ? P.t + INSET : P.b - INSET, b = FLIP ? P.b - INSET : P.t + INSET; return a + (y - V.y0) / (V.y1 - V.y0) * (b - a); }
+  function ix(px) { var a = P.l + INSET, b = P.r - INSET; return V.x0 + (px - a) / (b - a) * (V.x1 - V.x0); }
+  function iy(py) { var a = FLIP ? P.t + INSET : P.b - INSET, b = FLIP ? P.b - INSET : P.t + INSET; return V.y0 + (py - a) / (b - a) * (V.y1 - V.y0); }
+
+  var cv = $('cv'), ctx = cv.getContext('2d');
+  function draw() {
+    var cur = metric();
+    FLIP = cur.kind === 'rank';
+    $('chartTitle').textContent = cur.name;
+    $('baseToggle').checked = !!zeroBase[cur.key];
+    $('baseLabel').textContent = 'Start at ' + (FLIP ? 1 : 0);
+    series = visibleSeries();
+    updateEmpty();
+    var rect = cv.getBoundingClientRect(), W = rect.width, Hh = rect.height;
+    if (W < 10 || Hh < 10) return;
+    var dpr = window.devicePixelRatio || 1, bw = Math.round(W * dpr), bh = Math.round(Hh * dpr);
+    if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, Hh);
+    V = view || bounds();
+    if (!V) return;
+
+    var m = metric(), cs = getComputedStyle(document.documentElement), dark = isDark();
+    var col = function (n) { return cs.getPropertyValue(n).trim(); };
+    var cSurface = col('--surface'), cInk2 = col('--ink2'), cGrid = col('--grid'), cAxis = col('--axis'), cAccent = col('--accent'), cWash = col('--accent-wash'), cMuted = col('--muted');
+
+    var top = 12, bottom = 30, right = 16, ph = Hh - top - bottom;
+    var yt = niceTicks(V.y0, V.y1, Math.max(2, Math.floor(ph / 56)), isIntMetric(m));
+    ctx.font = '12px ' + FONT;
+    var lw = 0;
+    yt.ticks.forEach(function (t) { lw = Math.max(lw, ctx.measureText(fmtAxis(m, t, yt.dec)).width); });
+    P = { l: Math.ceil(lw) + 18, t: top, r: W - right, b: Hh - bottom };
+
+    ctx.lineWidth = 1; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+    yt.ticks.forEach(function (t) {
+      var y = Math.round(fy(t)) + 0.5;
+      if (y < P.t || y > P.b) return;
+      ctx.strokeStyle = cGrid; ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(P.r, y); ctx.stroke();
+      ctx.fillStyle = cInk2; ctx.fillText(fmtAxis(m, t, yt.dec), P.l - 8, y);
+    });
+    var xt = timeTicks(V.x0, V.x1, Math.max(2, Math.floor((P.r - P.l) / 110)));
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    xt.ticks.forEach(function (t) {
+      var x = Math.round(fx(t)) + 0.5;
+      if (x < P.l || x > P.r) return;
+      ctx.strokeStyle = cGrid; ctx.beginPath(); ctx.moveTo(x, P.t); ctx.lineTo(x, P.b); ctx.stroke();
+      var label = fmtTick(t, xt.cand, xt.span), w = ctx.measureText(label).width;
+      var lx = Math.min(Math.max(x - w / 2, 2), W - w - 2);
+      ctx.fillStyle = cInk2; ctx.fillText(label, lx, P.b + 9);
+    });
+    ctx.strokeStyle = cAxis; ctx.beginPath(); ctx.moveTo(P.l, P.b + 0.5); ctx.lineTo(P.r, P.b + 0.5); ctx.stroke();
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(P.l, P.t, P.r - P.l, P.b - P.t); ctx.clip();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    series.forEach(function (s) {
+      var c = seriesColor(s.sel.ci, dark);
+      ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath();
+      s.pts.forEach(function (p, i) { var X = fx(p.x), Y = fy(p.y); if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y); });
+      ctx.stroke();
+      // point markers: same rule for every line, controlled by Settings
+      if (showPoints) {
+        ctx.fillStyle = c; ctx.strokeStyle = cSurface; ctx.lineWidth = 2;
+        s.pts.forEach(function (p) { ctx.beginPath(); ctx.arc(fx(p.x), fy(p.y), 4, 0, 6.2832); ctx.fill(); ctx.stroke(); });
+      }
+    });
+    if (hover) {
+      var hp = hover.s.pts[hover.i], hx = fx(hp.x), hy = fy(hp.y);
+      ctx.strokeStyle = cMuted; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(Math.round(hx) + 0.5, P.t); ctx.lineTo(Math.round(hx) + 0.5, P.b); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = seriesColor(hover.s.sel.ci, dark); ctx.strokeStyle = cSurface; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hx, hy, 6, 0, 6.2832); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+
+    if (drag) {
+      var rx = Math.min(drag.x0, drag.x1), ry = Math.min(drag.y0, drag.y1), rw = Math.abs(drag.x1 - drag.x0), rh = Math.abs(drag.y1 - drag.y0);
+      ctx.fillStyle = cWash; ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = cAccent; ctx.lineWidth = 1; ctx.strokeRect(rx + 0.5, ry + 0.5, rw, rh);
+    }
+  }
+
+  // ---- pointer
+  function pos(e) { var r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  function clamp(v, a, b) { return Math.min(Math.max(v, a), b); }
+  function inPlot(p) { return p.x >= P.l && p.x <= P.r && p.y >= P.t && p.y <= P.b; }
+  function updateHover(p) {
+    if (!V) return;
+    var best = null, bd = 28 * 28;
+    series.forEach(function (s) {
+      s.pts.forEach(function (pt, i) {
+        var X = fx(pt.x); if (X < P.l - 6 || X > P.r + 6) return;
+        var Y = fy(pt.y); if (Y < P.t - 6 || Y > P.b + 6) return;
+        var d = (X - p.x) * (X - p.x) + (Y - p.y) * (Y - p.y);
+        if (d < bd) { bd = d; best = { s: s, i: i }; }
+      });
+    });
+    hover = best; draw(); showTip();
+  }
+  var tip = $('tip');
+  function hideTip() { tip.hidden = true; }
+  function showTip() {
+    if (!hover) { hideTip(); return; }
+    var pt = hover.s.pts[hover.i], px = fx(pt.x), py = fy(pt.y), m = metric();
+    tip.querySelector('.sw').style.setProperty('--c', seriesColor(hover.s.sel.ci, isDark()));
+    tip.querySelector('.tn').textContent = nameOf(hover.s.sel.id);
+    tip.querySelector('.td').textContent = fmtFull(pt.x);
+    tip.querySelector('.tv').textContent = fmtValue(m, pt.y, pt.rec, true);
+    tip.hidden = false;
+    var w = tip.offsetWidth, h = tip.offsetHeight, cw = cv.clientWidth;
+    var left = px + 14; if (left + w > cw - 4) left = px - 14 - w; if (left < 4) left = 4;
+    var topPos = py - h - 12; if (topPos < 4) topPos = py + 14;
+    tip.style.left = left + 'px'; tip.style.top = topPos + 'px';
+  }
+  cv.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 || !V) return;
+    var p = pos(e); if (!inPlot(p)) return;
+    drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    hover = null; hideTip();
+    cv.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  cv.addEventListener('pointermove', function (e) {
+    var p = pos(e);
+    if (drag) { drag.x1 = clamp(p.x, P.l, P.r); drag.y1 = clamp(p.y, P.t, P.b); draw(); return; }
+    if (e.pointerType !== 'touch') updateHover(p);
+  });
+  cv.addEventListener('pointerup', function (e) {
+    if (!drag) return;
+    var d = drag; drag = null;
+    var dx = Math.abs(d.x1 - d.x0), dy = Math.abs(d.y1 - d.y0);
+    if (dx < 6 && dy < 6) { updateHover(pos(e)); return; }
+    var n = { x0: V.x0, x1: V.x1, y0: V.y0, y1: V.y1 };
+    if (dx >= 6) { n.x0 = ix(Math.min(d.x0, d.x1)); n.x1 = ix(Math.max(d.x0, d.x1)); }
+    if (dy >= 6) { var ya = iy(d.y0), yb = iy(d.y1); n.y0 = Math.min(ya, yb); n.y1 = Math.max(ya, yb); }
+    if (n.x1 - n.x0 < 1 || !(n.y1 - n.y0 > 0)) { draw(); return; }
+    zoomStack.push(view); view = n; syncZoom(); draw();
+  });
+  cv.addEventListener('pointercancel', function () { drag = null; draw(); });
+  cv.addEventListener('pointerleave', function () { if (!drag) { hover = null; hideTip(); draw(); } });
+  cv.addEventListener('dblclick', resetZoom);
+  window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drag) { drag = null; draw(); } });
+  function resetZoom() { view = null; zoomStack.length = 0; hover = null; hideTip(); syncZoom(); draw(); }
+  function syncZoom() { $('backBtn').disabled = !zoomStack.length; $('resetBtn').disabled = view === null; }
+  $('backBtn').addEventListener('click', function () { if (zoomStack.length) { view = zoomStack.pop(); hover = null; hideTip(); syncZoom(); draw(); } });
+  $('resetBtn').addEventListener('click', resetZoom);
+  $('baseToggle').addEventListener('change', function () {
+    if (this.checked) zeroBase[metricKey] = true; else delete zeroBase[metricKey];
+    view = null; zoomStack.length = 0; hover = null; hideTip();
+    save(); syncZoom(); draw();
+  });
+
+  // ================= Users page =================
+  function looseJSON(text) {
+    try { return JSON.parse(text); } catch (e) { /* try again without trailing commas */ }
+    return JSON.parse(text.replace(/,(\s*[\]}])/g, '$1'));
+  }
+  function importUsers(arr) {
+    var added = 0, updated = 0, skipped = 0;
+    (Array.isArray(arr) ? arr : [arr]).forEach(function (o) {
+      var id = o && (o.id != null ? o.id : o.steamId), name = o && o.name;
+      id = id != null ? String(id).trim() : '';
+      name = name != null ? String(name).trim() : '';
+      if (!/^\d{5,20}$/.test(id) || !name) { skipped++; return; }
+      if (!users.has(id)) added++; else if (users.get(id) !== name) updated++;
+      users.set(id, name);
+    });
+    save(); renderUsers(); renderLegend(); renderPresets();
+    return { added: added, updated: updated, skipped: skipped };
+  }
+  function importReport(r) {
+    var bits = ['Imported: ' + r.added + ' new'];
+    if (r.updated) bits.push(r.updated + ' renamed');
+    if (r.skipped) bits.push(r.skipped + ' skipped (missing id or name)');
+    return bits.join(', ') + '.';
+  }
+  function renderUsers() {
+    var q = $('userFilter').value.trim().toLowerCase(), body = $('userRows');
+    body.textContent = '';
+    var list = [];
+    users.forEach(function (name, id) { if (!q || name.toLowerCase().indexOf(q) >= 0 || id.indexOf(q) >= 0) list.push({ id: id, name: name }); });
+    list.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    $('userCount').textContent = users.size.toLocaleString() + (users.size === 1 ? ' saved user' : ' saved users') + (q ? ', ' + list.length.toLocaleString() + ' shown' : '');
+    if (!list.length) {
+      var tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = 3; td.className = 'tdempty';
+      td.textContent = users.size ? 'No user matches that filter.' : 'No saved users yet. Use Import to add a list of names and Steam IDs.';
+      tr.appendChild(td); body.appendChild(tr);
+    }
+    var LIMIT = 1000;
+    list.slice(0, LIMIT).forEach(function (u) {
+      var tr = document.createElement('tr');
+      var a = document.createElement('td'); a.textContent = u.name;
+      var b = document.createElement('td'); b.className = 'id'; b.textContent = u.id;
+      var c = document.createElement('td'); c.className = 'act';
+      var g = document.createElement('button'); g.className = 'btn small'; g.type = 'button';
+      g.textContent = selected(u.id) ? 'On graph' : 'Add to graph';
+      g.addEventListener('click', function () { toggleUser(u.id); renderUsers(); });
+      var x = document.createElement('button'); x.className = 'btn small danger'; x.type = 'button'; x.textContent = 'Delete';
+      x.style.marginLeft = '6px';
+      x.addEventListener('click', function () { users.delete(u.id); save(); renderUsers(); renderLegend(); say('Deleted ' + u.name + '.'); });
+      c.appendChild(g); c.appendChild(x);
+      tr.appendChild(a); tr.appendChild(b); tr.appendChild(c); body.appendChild(tr);
+    });
+    if (list.length > LIMIT) {
+      var tr2 = document.createElement('tr'), td2 = document.createElement('td');
+      td2.colSpan = 3; td2.className = 'tdempty';
+      td2.textContent = 'Showing the first ' + LIMIT.toLocaleString() + ' of ' + list.length.toLocaleString() + '. Type in the filter to narrow the list.';
+      tr2.appendChild(td2); body.appendChild(tr2);
+    }
+  }
+  function toggleBox(btn, box, focusEl) {
+    var open = box.hidden; box.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && focusEl) focusEl.focus();
+  }
+  $('importBtn').addEventListener('click', function () { toggleBox($('importBtn'), $('importBox'), $('importText')); });
+  $('importClose').addEventListener('click', function () { $('importBox').hidden = true; $('importBtn').setAttribute('aria-expanded', 'false'); });
+  $('snippetBtn').addEventListener('click', function () { toggleBox($('snippetBtn'), $('snippetBox')); });
+  $('importGo').addEventListener('click', function () {
+    var parsed;
+    try { parsed = looseJSON($('importText').value); }
+    catch (e) { say('That is not valid JSON. Paste an array like [{"id": "7656...", "name": "Someone"}].', true); return; }
+    var r = importUsers(parsed);
+    say(importReport(r), r.added + r.updated === 0 && r.skipped > 0);
+    if (r.added || r.updated) { $('importText').value = ''; $('importBox').hidden = true; $('importBtn').setAttribute('aria-expanded', 'false'); }
+  });
+  $('userFilter').addEventListener('input', renderUsers);
+  function copyText(text, okMsg, fallbackEl) {
+    var done = function () { say(okMsg); };
+    var fail = function () {
+      if (fallbackEl) { var r = document.createRange(); r.selectNodeContents(fallbackEl); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+      say('Copy was blocked. The text is selected, press Ctrl+C to copy it.', true);
+    };
+    try { navigator.clipboard.writeText(text).then(done, fail); } catch (e) { fail(); }
+  }
+  $('snippetCopy').addEventListener('click', function () { copyText($('snippetCode').textContent, 'Snippet copied.', $('snippetCode')); });
+  $('exportBtn').addEventListener('click', function () {
+    copyText(JSON.stringify(snapshot().users, null, 2), 'Copied ' + users.size.toLocaleString() + ' users as JSON.');
+  });
+  var clearArmed = 0;
+  $('clearUsers').addEventListener('click', function () {
+    var b = $('clearUsers');
+    if (!clearArmed) {
+      clearArmed = setTimeout(function () { clearArmed = 0; b.textContent = 'Delete all users'; }, 4000);
+      b.textContent = 'Click again to delete ' + users.size.toLocaleString() + ' users';
+      return;
+    }
+    clearTimeout(clearArmed); clearArmed = 0; b.textContent = 'Delete all users';
+    users = new Map(); save(); renderUsers(); renderLegend(); say('Deleted all saved users. Presets were kept.');
+  });
+
+  // ================= View switch =================
+  function setView(v) {
+    var g = v === 'graphs';
+    $('graphsView').hidden = !g; $('usersView').hidden = g;
+    $('vGraphs').setAttribute('aria-selected', g ? 'true' : 'false');
+    $('vUsers').setAttribute('aria-selected', g ? 'false' : 'true');
+    if (g) { renderLegend(); requestAnimationFrame(draw); } else renderUsers();
+    closeDropdown(); setPresetPanel(false); setSettingsPanel(false);
+  }
+  $('vGraphs').addEventListener('click', function () { setView('graphs'); });
+  $('vUsers').addEventListener('click', function () { setView('users'); });
+
+  // ================= Paste: statistics JSON or a user list =================
+  document.addEventListener('paste', function (e) {
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    var text = (e.clipboardData || window.clipboardData).getData('text');
+    if (!text || !text.trim()) return;
+    var parsed;
+    try { parsed = looseJSON(text.trim()); } catch (err) { say('Pasted text is not JSON.', true); return; }
+    e.preventDefault();
+    var arr = Array.isArray(parsed) ? parsed : [parsed];
+    if (arr.length && arr[0] && arr[0].steamId && arr[0].timestamp) {
+      var byId = {};
+      arr.forEach(function (r) { if (r && r.steamId) (byId[r.steamId] = byId[r.steamId] || []).push(r); });
+      Object.keys(byId).forEach(function (id) {
+        if (!selected(id)) selection.push({ id: id, ci: nextColorIndex(), visible: true });
+        var d = data.get(id); if (d) d.req++;
+        ingestRecords(id, byId[id]);
+      });
+      afterSelectionChange();
+      say('Added pasted statistics for ' + Object.keys(byId).map(nameOf).join(', ') + '.');
+    } else if (arr.length && arr[0] && (arr[0].id || arr[0].steamId) && arr[0].name) {
+      say(importReport(importUsers(arr)));
+    } else {
+      say('Paste Steam Hunters statistics or a user list of {id, name} objects.', true);
+    }
+  });
+
+  // ================= Misc =================
+  var sayTimer = 0;
+  function say(msg, isErr) {
+    var el = $('status'); el.textContent = msg; el.className = 'status' + (isErr ? ' err' : '');
+    clearTimeout(sayTimer); sayTimer = setTimeout(function () { el.textContent = ''; }, 7000);
+  }
+  if (window.ResizeObserver) new ResizeObserver(function () { draw(); }).observe($('card'));
+  else window.addEventListener('resize', draw);
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  var themeChanged = function () { renderLegend(); draw(); };
+  if (mq.addEventListener) mq.addEventListener('change', themeChanged); else if (mq.addListener) mq.addListener(themeChanged);
+  new MutationObserver(themeChanged).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // test hook for pure helpers
+  window.__shg = { humanize: humanize, groupOf: groupOf, fmtValue: fmtValue, MBYKEY: MBYKEY, apiUrl: apiUrl, looseJSON: looseJSON };
+
+  // ================= Start =================
+  $('offlineBanner').hidden = SERVED;
+  renderTabs(); renderLegend(); syncZoom(); draw();
+  load().then(function () {
+    if (!MBYKEY[metricKey]) metricKey = 'validPoints';
+    renderTabs(); renderLegend(); renderPresets();
+    selection.forEach(function (s) { fetchUser(s.id); });
+    draw();
+  });
+})();
+</script>
+</body>
+</html>

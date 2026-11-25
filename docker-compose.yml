@@ -1,0 +1,19 @@
+services:
+  sh-graphs:
+    build: .
+    container_name: sh-graphs
+    restart: unless-stopped        # starts with Docker and after crashes or reboots
+    ports:
+      # Reachable from this computer only. To reach it from other devices on your
+      # network use "8765:8765" and set SH_ALLOWED_HOSTS below (see the note there).
+      - "127.0.0.1:8765:8765"
+    environment:
+      # Host names the server answers to. Add your server's name or IP when you
+      # open it from another device, for example "localhost,127.0.0.1,nas.local".
+      # Use "*" to accept any name.
+      SH_ALLOWED_HOSTS: "localhost,127.0.0.1"
+    volumes:
+      - sh-graphs-data:/data       # users, presets and selection survive rebuilds
+
+volumes:
+  sh-graphs-data:

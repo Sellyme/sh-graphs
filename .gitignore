@@ -1,0 +1,4 @@
+sh-graphs-data.json
+sh-graphs-data.json.tmp
+__pycache__/
+*.zip
