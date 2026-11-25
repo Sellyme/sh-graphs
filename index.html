@@ -441,7 +441,7 @@ td.act { text-align: right; width: 1%; }
   var presets = [];               // {name, ids:[]}
   var selection = [];             // {id, ci, visible}
   var metricKey = 'validPoints';
-  var showPoints = true;          // draw a circle at every data point on every line
+  var showPoints = false;         // draw a circle at every data point on every line
   var zeroBase = {};              // metric key -> true when its y-axis starts at 0 (1 for ranks)
   var FLIP = false;               // rank metrics draw with 1 at the top
   var data = new Map();           // id -> {status:'loading'|'ok'|'error', records:[], error, fetchedAt, req}
@@ -467,7 +467,7 @@ td.act { text-align: right; width: 1%; }
       return { id: String(s.id), ci: +s.ci || 0, visible: s.visible !== false };
     }) : [];
     if (d.metric) metricKey = d.metric;
-    showPoints = d.showPoints !== false;
+    showPoints = d.showPoints === true;
     zeroBase = (d.zeroBase && typeof d.zeroBase === 'object') ? d.zeroBase : {};
   }
   var saveTimer = 0, saveWarned = false;
