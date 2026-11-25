@@ -213,6 +213,15 @@ td.act { text-align: right; width: 1%; }
 .tdempty { padding: 24px; text-align: center; color: var(--ink2); }
 
 /* EHP page */
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; color: var(--ink2); }
+.pager .grow { flex: 1 1 0; }
+.tagpick .panel { left: 0; right: auto; width: min(300px, calc(100vw - 32px)); }
+.tagpick .panel .opt { display: flex; align-items: center; gap: 8px; padding: 3px 4px; font-size: 13px; border-radius: 4px; cursor: pointer; }
+.tagpick .panel .opt:hover { background: var(--btn); }
+.tagpick .panel .opt .ct { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.filters .tagpick .panel .opt input { margin: 0; width: auto; height: auto; padding: 0; }
+.filters .tagpick .panel input[type="search"] { width: 100%; max-width: none; height: 28px; padding: 0 8px; }
+.tagpick .panel select { width: 100%; height: 28px; font-size: 12px; background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; padding: 0 6px; }
 .lb { max-height: 66.67vh; overflow: auto; }           /* up to two thirds of the screen, only once the rows need it */
 .lb thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: 0 1px 0 var(--grid); }
 .lb th.sortable { cursor: pointer; user-select: none; }
@@ -272,6 +281,18 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
             <input type="checkbox" id="pointsToggle">
             <span class="track" aria-hidden="true"></span>
             <span>Show data point markers</span>
+          </label>
+          <h3>EHP</h3>
+          <label class="switch" title="Off: total median time divided by total playtime. On: work out efficiency for each game, then average those.">
+            <input type="checkbox" id="effMeanToggle">
+            <span class="track" aria-hidden="true"></span>
+            <span>Average each game's efficiency</span>
+          </label>
+          <label class="switch" style="justify-content:space-between;cursor:default">
+            <span>Leaderboard users per page</span>
+            <select id="pageSizeSel" class="btn small" style="padding:0 6px">
+              <option>10</option><option>25</option><option>50</option><option>100</option>
+            </select>
           </label>
         </div>
       </div>
@@ -404,6 +425,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
         <tbody id="ehpRows"></tbody>
       </table>
     </div>
+    <div class="pager" id="ehpPager" hidden></div>
     <div class="chart-head">
       <h2 id="ehpBarTitle">Effective Hours Played</h2>
       <div class="chart-tools">
@@ -516,6 +538,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   var selection = [];             // {id, ci, visible}
   var metricKey = 'validPoints';
   var showPoints = false;         // draw a circle at every data point on every line
+  var ehpEffMean = false;         // EHP efficiency: mean of per-game efficiencies instead of sum(median) / sum(playtime)
+  var ehpPageSize = 25;           // EHP leaderboard rows per page
   var countries = {};             // id -> country code, cached from historical data (used for EHP flags)
   var zeroBase = {};              // metric key -> true when its y-axis starts at 0 (1 for ranks)
   var FLIP = false;               // rank metrics draw with 1 at the top
@@ -532,7 +556,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     var u = [];
     users.forEach(function (name, id) { u.push({ id: id, name: name }); });
     u.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    return { version: 1, users: u, presets: presets, selection: selection, metric: metricKey, zeroBase: zeroBase, showPoints: showPoints, countries: countries };
+    return { version: 1, users: u, presets: presets, selection: selection, metric: metricKey, zeroBase: zeroBase, showPoints: showPoints, countries: countries, ehpEffMean: ehpEffMean, ehpPageSize: ehpPageSize };
   }
   function applyStore(d) {
     users = new Map();
@@ -543,6 +567,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     }) : [];
     if (d.metric) metricKey = d.metric;
     showPoints = d.showPoints === true;
+    ehpEffMean = d.ehpEffMean === true;
+    ehpPageSize = [10, 25, 50, 100].indexOf(d.ehpPageSize) >= 0 ? d.ehpPageSize : 25;
     countries = (d.countries && typeof d.countries === 'object') ? d.countries : {};
     zeroBase = (d.zeroBase && typeof d.zeroBase === 'object') ? d.zeroBase : {};
   }
@@ -791,13 +817,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   function setSettingsPanel(open) {
     $('settingsPanel').hidden = !open;
     $('settingsBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) $('pointsToggle').checked = showPoints;
+    if (open) { $('pointsToggle').checked = showPoints; $('effMeanToggle').checked = ehpEffMean; $('pageSizeSel').value = String(ehpPageSize); }
   }
   $('settingsBtn').addEventListener('click', function () { setSettingsPanel($('settingsPanel').hidden); });
   $('settingsPanel').addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { setSettingsPanel(false); $('settingsBtn').focus(); }
   });
   $('pointsToggle').addEventListener('change', function () { showPoints = this.checked; save(); draw(); });
+  $('effMeanToggle').addEventListener('change', function () { ehpEffMean = this.checked; save(); renderEhp(); });
+  $('pageSizeSel').addEventListener('change', function () {
+    var first = ehpPage * ehpPageSize;
+    ehpPageSize = +this.value; ehpPage = Math.floor(first / ehpPageSize);   // keep the first visible user on screen
+    save(); renderEhp();
+  });
   document.addEventListener('focusin', function (e) {
     if (!$('dd').hidden && !$('searchWrap').contains(e.target)) closeDropdown();
   });
@@ -1251,7 +1283,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   var ehpLoaded = false, ehpLoading = false;
   var ehpState = new Map();               // id -> {s:'queued'|'loading'|'error', msg}
   var ehpQueue = [], ehpBusy = false, ehpOpen = {};
-  var ehpFilter = { type: '', price: '', trust: '', vr: '', tag: '', from: '', to: '' };
+  var ehpFilter = { type: '', price: '', trust: '', vr: '', tags: [], tagMode: 'any', from: '', to: '' };
+  var ehpPage = 0;
   var ehpMode = 'ehp', ehpSortKey = 'ehp', ehpFilterSig = null;
 
   function ehpLoad() {
@@ -1362,7 +1395,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     if (f.trust === 'restricted' && !g.x) return false;
     if (f.vr === 'no' && g.v) return false;
     if (f.vr === 'only' && !g.v) return false;
-    if (f.tag && g.g.indexOf(+f.tag) < 0) return false;
+    if (f.tags.length) {
+      var hit = function (t) { return g.g.indexOf(t) >= 0; };
+      if (f.tagMode === 'all' ? !f.tags.every(hit) : f.tagMode === 'none' ? f.tags.some(hit) : !f.tags.some(hit)) return false;
+    }
     var from = parseInt(f.from, 10), to = parseInt(f.to, 10);
     if (isFinite(from) && g.r < from) return false;
     if (isFinite(to) && g.r > to) return false;
@@ -1371,15 +1407,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   function ehpStats(id) {
     var u = ehp.users[id];
     if (!u || !u.games) return null;
-    var med = 0, medV = 0, play = 0, n = 0, fast = 0, slow = 0;
+    var med = 0, medV = 0, play = 0, n = 0, fast = 0, slow = 0, effSum = 0, effN = 0;
     u.games.forEach(function (g) {
       if (!ehpPass(g)) return;
       med += g.m; n++;                                              // EHP and Games Completed count every game
       if (g.i) return;                                              // invalid playtime: skip Efficiency, Faster, Slower, Ratio
       medV += g.m; play += g.p;
+      if (g.p > 0) { effSum += g.m / g.p * 100; effN++; }       // per-game efficiency, for the averaging mode
       if ((g.c != null ? g.c : g.p) <= g.m) fast++; else slow++;   // ties go to Faster
     });
-    return { n: n, fast: fast, slow: slow, ehp: med / 60, played: play / 60, eff: play > 0 ? medV / play * 100 : null };
+    return { n: n, fast: fast, slow: slow, ehp: med / 60, played: play / 60, eff: ehpEffMean ? (effN ? effSum / effN : null) : (play > 0 ? medV / play * 100 : null) };
   }
   // Gold / silver / bronze rosettes with the rank digit centred on its ink, not its text box.
   var ROSETTE = [
@@ -1438,7 +1475,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   function renderEhpFilters() {
     var types = {}, tags = {};
     Object.keys(ehp.users).forEach(function (id) {
-      (ehp.users[id].games || []).forEach(function (g) { if (g.y) types[g.y] = 1; g.g.forEach(function (t) { tags[t] = 1; }); });
+      (ehp.users[id].games || []).forEach(function (g) { if (g.y) types[g.y] = 1; g.g.forEach(function (t) { tags[t] = (tags[t] || 0) + 1; }); });
     });
     var sig = Object.keys(types).sort().join('|') + '#' + Object.keys(tags).length;
     if (sig === ehpFilterSig) return;
@@ -1450,27 +1487,82 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       opts.forEach(function (o) { var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; s.appendChild(op); });
       s.value = ehpFilter[key];
       if (s.value !== ehpFilter[key]) { ehpFilter[key] = ''; s.value = ''; }
-      s.addEventListener('change', function () { ehpFilter[key] = s.value; renderEhp(); });
+      s.addEventListener('change', function () { ehpFilter[key] = s.value; ehpPage = 0; renderEhp(); });
       l.appendChild(s); box.appendChild(l);
     }
     function year(label, key) {
       var l = document.createElement('label'); l.appendChild(document.createTextNode(label));
       var i = document.createElement('input'); i.type = 'text'; i.inputMode = 'numeric'; i.maxLength = 4; i.value = ehpFilter[key]; i.placeholder = 'any';
-      i.addEventListener('input', function () { ehpFilter[key] = i.value.trim(); renderEhp(); });
+      i.addEventListener('input', function () { ehpFilter[key] = i.value.trim(); ehpPage = 0; renderEhp(); });
       l.appendChild(i); box.appendChild(l);
     }
     select('Type', 'type', [['', 'All']].concat(Object.keys(types).sort().map(function (t) { return [t, t]; })));
     select('Price', 'price', [['', 'All'], ['free', 'Free only'], ['paid', 'Paid only']]);
     select('Trusted', 'trust', [['', 'All'], ['trusted', 'Trusted only'], ['restricted', 'Restricted only']]);
     select('VR', 'vr', [['', 'All'], ['no', 'Exclude VR'], ['only', 'VR only']]);
-    select('Tag', 'tag', [['', 'Any']].concat(Object.keys(tags).map(function (t) { return [t, ehp.tags[t] || ('Tag ' + t)]; })
-      .sort(function (a, b) { return a[1].localeCompare(b[1]); })));
+    box.appendChild(tagPicker(tags));
     year('Released from', 'from'); year('to', 'to');
     var rs = document.createElement('button'); rs.type = 'button'; rs.className = 'btn small'; rs.textContent = 'Reset filters';
-    rs.addEventListener('click', function () { ehpFilter = { type: '', price: '', trust: '', vr: '', tag: '', from: '', to: '' }; ehpFilterSig = null; renderEhp(); });
+    rs.addEventListener('click', function () { ehpFilter = { type: '', price: '', trust: '', vr: '', tags: [], tagMode: 'any', from: '', to: '' }; ehpPage = 0; ehpFilterSig = null; renderEhp(); });
     box.appendChild(rs);
   }
-  function ehpFiltered() { var f = ehpFilter; return !!(f.type || f.price || f.trust || f.vr || f.tag || f.from || f.to); }
+  // Multi-select tag filter in a dropdown with a search box. Modes: has any of / has all of / has none of.
+  function tagPicker(counts) {
+    var wrap = document.createElement('div'); wrap.className = 'pop tagpick';
+    var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn small';
+    btn.setAttribute('aria-expanded', 'false');
+    var panel = document.createElement('div'); panel.className = 'panel'; panel.hidden = true;
+    var mode = document.createElement('select'); mode.setAttribute('aria-label', 'Tag match mode');
+    [['any', 'Games with any of these tags'], ['all', 'Games with all of these tags'], ['none', 'Exclude games with these tags']].forEach(function (o) {
+      var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; mode.appendChild(op);
+    });
+    mode.value = ehpFilter.tagMode;
+    var search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Search tags'; search.autocomplete = 'off'; search.spellcheck = false;
+    var list = document.createElement('div'); list.className = 'plist';
+    var clear = document.createElement('button'); clear.type = 'button'; clear.className = 'btn small'; clear.textContent = 'Clear selected tags';
+    var ids = Object.keys(counts).map(Number).sort(function (a, b) { return (ehp.tags[a] || '').localeCompare(ehp.tags[b] || ''); });
+    function label() {
+      var n = ehpFilter.tags.length;
+      btn.textContent = 'Tags: ' + (n ? (ehpFilter.tagMode === 'none' ? 'exclude ' : ehpFilter.tagMode === 'all' ? 'all of ' : 'any of ') + n : 'any') + ' \u25be';
+    }
+    function fill() {
+      var q = search.value.trim().toLowerCase(); list.textContent = '';
+      var shown = 0;
+      ids.forEach(function (t) {
+        var name = ehp.tags[t] || ('Tag ' + t);
+        if (q && name.toLowerCase().indexOf(q) < 0) return;
+        shown++;
+        var l = document.createElement('label'); l.className = 'opt';
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ehpFilter.tags.indexOf(t) >= 0;
+        cb.addEventListener('change', function () {
+          var i = ehpFilter.tags.indexOf(t);
+          if (cb.checked && i < 0) ehpFilter.tags.push(t); else if (!cb.checked && i >= 0) ehpFilter.tags.splice(i, 1);
+          ehpPage = 0; label(); renderEhp();
+        });
+        var nm = document.createElement('span'); nm.textContent = name;
+        var ct = document.createElement('span'); ct.className = 'ct'; ct.textContent = counts[t].toLocaleString();
+        l.appendChild(cb); l.appendChild(nm); l.appendChild(ct); list.appendChild(l);
+      });
+      if (!shown) { var h = document.createElement('div'); h.className = 'muted'; h.textContent = 'No tag matches "' + search.value.trim() + '".'; list.appendChild(h); }
+    }
+    mode.addEventListener('change', function () { ehpFilter.tagMode = mode.value; ehpPage = 0; label(); renderEhp(); });
+    search.addEventListener('input', fill);
+    clear.addEventListener('click', function () { ehpFilter.tags = []; ehpPage = 0; label(); fill(); renderEhp(); });
+    btn.addEventListener('click', function () {
+      panel.hidden = !panel.hidden; btn.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+      if (!panel.hidden) { fill(); search.focus(); }
+    });
+    panel.addEventListener('keydown', function (e) { if (e.key === 'Escape') { panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.focus(); } });
+    panel.appendChild(mode); panel.appendChild(search); panel.appendChild(list); panel.appendChild(clear);
+    wrap.appendChild(btn); wrap.appendChild(panel);
+    label();
+    return wrap;
+  }
+  document.addEventListener('pointerdown', function (e) {
+    var open = document.querySelector('.tagpick .panel:not([hidden])');
+    if (open && !open.parentNode.contains(e.target)) { open.hidden = true; open.parentNode.querySelector('button').setAttribute('aria-expanded', 'false'); }
+  });
+  function ehpFiltered() { var f = ehpFilter; return !!(f.type || f.price || f.trust || f.vr || f.tags.length || f.from || f.to); }
 
   // ---- leaderboard
   function cell(tr, text, cls) { var td = document.createElement('td'); if (cls) td.className = cls; if (text != null) td.textContent = text; tr.appendChild(td); return td; }
@@ -1480,6 +1572,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     $('thEff').className = 'num sortable' + (ehpSortKey === 'eff' ? ' sorted' : '');
     var rows = ehpRows();
     if (!rows.length) {
+      $('ehpPager').hidden = true;
       var tr0 = document.createElement('tr'), td0 = document.createElement('td');
       td0.colSpan = 10; td0.className = 'tdempty';
       td0.textContent = !SERVED ? 'EHP needs the local server (python3 server.py): the page cannot download or save this data when opened as a file.'
@@ -1487,8 +1580,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       tr0.appendChild(td0); body.appendChild(tr0);
       return;
     }
-    var rank = 0;
-    rows.forEach(function (r) {
+    var size = ehpPageSize, pages = Math.max(1, Math.ceil(rows.length / size));
+    if (ehpPage >= pages) ehpPage = pages - 1;
+    if (ehpPage < 0) ehpPage = 0;
+    var start = ehpPage * size, pageRows = rows.slice(start, start + size);
+    renderEhpPager(rows.length, pages, start, pageRows.length);
+    var rank = start;                               // rows with data come first, so the index is the rank
+    pageRows.forEach(function (r) {
       var id = r.id, u = ehp.users[id], st = ehpState.get(id), tr = document.createElement('tr');
       var tdR = cell(tr, null, 'num rk');
       if (r.st) { rank++; if (rank <= 3) tdR.appendChild(rosette(rank)); else tdR.textContent = String(rank); }
@@ -1531,6 +1629,25 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       if (r.st && ehpOpen[id]) body.appendChild(ehpDetailRow(id, r.st));
     });
   }
+  function renderEhpPager(total, pages, start, count) {
+    var box = $('ehpPager');
+    box.hidden = pages <= 1;
+    if (pages <= 1) return;
+    box.textContent = '';
+    function btn(text, to, aria) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = text;
+      b.setAttribute('aria-label', aria); b.disabled = to === ehpPage;
+      b.addEventListener('click', function () { ehpPage = to; renderEhpTable(); });
+      box.appendChild(b);
+    }
+    btn('\u00ab', 0, 'First page'); btn('\u2039 Prev', Math.max(0, ehpPage - 1), 'Previous page');
+    var t = document.createElement('span'); t.textContent = 'Page ' + (ehpPage + 1) + ' of ' + pages; box.appendChild(t);
+    btn('Next \u203a', Math.min(pages - 1, ehpPage + 1), 'Next page'); btn('\u00bb', pages - 1, 'Last page');
+    var g = document.createElement('span'); g.className = 'grow'; box.appendChild(g);
+    var c = document.createElement('span');
+    c.textContent = 'Showing ' + (start + 1).toLocaleString() + '\u2013' + (start + count).toLocaleString() + ' of ' + total.toLocaleString() + ' users';
+    box.appendChild(c);
+  }
   function ehpDetailRow(id, st) {
     var tr = document.createElement('tr'); tr.className = 'detail';
     var td = document.createElement('td'); td.colSpan = 10; tr.appendChild(td);
@@ -1556,8 +1673,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     }
     return tr;
   }
-  $('thEhp').addEventListener('click', function () { ehpSortKey = 'ehp'; renderEhpTable(); });
-  $('thEff').addEventListener('click', function () { ehpSortKey = 'eff'; renderEhpTable(); });
+  $('thEhp').addEventListener('click', function () { ehpSortKey = 'ehp'; ehpPage = 0; renderEhpTable(); });
+  $('thEff').addEventListener('click', function () { ehpSortKey = 'eff'; ehpPage = 0; renderEhpTable(); });
 
   // ---- bar graph (reads stored data only; hiding a user never touches the API or the saved data)
   function ehpValue(st) { return ehpMode === 'eff' ? st.eff : ehpMode === 'n' ? st.n : st.ehp; }
