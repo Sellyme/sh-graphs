@@ -224,7 +224,7 @@ td.act { text-align: right; width: 1%; }
 .dd .bdg { flex: none; font-size: 11px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); white-space: nowrap; }
 .dd .bdg.has { background: var(--accent-wash); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .hwrap { position: relative; flex: 1 1 0; min-height: 200px; width: 100%; }
-.hwrap svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.hwrap svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: crosshair; }
 .hwrap .tip { min-width: 150px; }
 .tagres { display: flex; flex-direction: column; gap: 8px; }
 .tagres h3 { margin: 4px 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
@@ -325,7 +325,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
           <label class="switch" style="justify-content:space-between;cursor:default" title="Rolling graphs (in Graphs and EHP) average the gain over this much time before each point.">
             <span>Rolling average window</span>
             <select id="rollSel" class="btn small" style="padding:0 6px">
-              <option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="365">1 year</option>
+              <option value="7">7 days</option><option value="30">30 days</option><option value="91.25">3 months</option><option value="365">1 year</option>
             </select>
           </label>
           <label class="switch" style="justify-content:space-between;cursor:default" title="The unit rolling averages are shown in. A month is a twelfth of a year.">
@@ -518,6 +518,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     <div class="chart-head">
       <h2 id="ehpBarTitle">Effective Hours Played</h2>
       <div class="chart-tools">
+        <span class="muted" id="ehpZoomHint" hidden>Drag a box on the chart to zoom. Double-click to reset.</span>
         <div class="views" role="tablist" aria-label="Chart type">
           <button role="tab" id="ehpChBar" aria-selected="true">Bar chart</button>
           <button role="tab" id="ehpChHist" aria-selected="false">History</button>
@@ -530,6 +531,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
           <option value="ehp">EHP</option><option value="eff">Efficiency</option><option value="n">Games completed</option>
         </select></label>
         <button class="btn small" id="ehpSize" aria-pressed="false" title="Make the graph fill the page">Expand</button>
+        <div class="zoom" id="ehpZoomWrap" hidden>
+          <button class="btn small" id="ehpBackBtn" disabled>Zoom back</button>
+          <button class="btn small" id="ehpResetBtn" disabled>Reset zoom</button>
+        </div>
       </div>
     </div>
     <section class="barcard sz-min" id="ehpBars" aria-label="Bar graph"></section>
@@ -681,7 +686,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     deltaPerTime = d.deltaPerTime === true;
     ehpEffMean = d.ehpEffMean === true;
     graphRolling = d.graphRolling === true;
-    rollDays = [1, 7, 30, 365].indexOf(d.rollDays) >= 0 ? d.rollDays : 7;
+    rollDays = [7, 30, 91.25, 365].indexOf(d.rollDays) >= 0 ? d.rollDays : 7;
     rollPer = Object.keys(ROLL_PER).indexOf(d.rollPer) >= 0 ? d.rollPer : 'day';
     ehpPageSize = [10, 25, 50, 100].indexOf(d.ehpPageSize) >= 0 ? d.ehpPageSize : 25;
     countries = (d.countries && typeof d.countries === 'object') ? d.countries : {};
@@ -1100,7 +1105,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       return { x: p.x, y: p.y, rec: p.src.rec, between: p.between };
     }));
   }
-  function rollWindowName() { return rollDays === 365 ? '1-year' : rollDays + '-day'; }
+  function rollWindowName() { return rollDays === 365 ? '1-year' : rollDays === 91.25 ? '3-month' : rollDays + '-day'; }
   function rollTitle() { return rollWindowName() + ' rolling average, per ' + rollPer; }
   function fmtRateNum(v) { return (Math.abs(v) < 0.005 ? 0 : v).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
   function fmtRate(m, v) { return fmtRateNum(v) + ' ' + m.unit + '/' + rollPer; }
@@ -1240,7 +1245,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     else if (!selection.some(function (s) { return s.visible; })) { t.textContent = 'All users are hidden'; x.textContent = 'Click a name below the chart to show it again.'; }
     else if (rollActive() && selection.some(function (s) { var d = data.get(s.id); return s.visible && d && latest(metric(), d.records); })) {
       t.textContent = 'Not enough history';
-      x.textContent = 'A ' + rollWindowName() + ' rolling average needs at least ' + rollDays + (rollDays === 1 ? ' day' : ' days') + ' of data. You can change the period in Settings.';
+      x.textContent = 'A ' + rollWindowName() + ' rolling average needs at least ' + (rollDays === 91.25 ? '3 months' : rollDays + ' days') + ' of data. You can change the period in Settings.';
     }
     else { t.textContent = 'No data for this metric'; x.textContent = 'The selected users have no values for ' + metric().name + ' yet.'; }
   }
@@ -1621,6 +1626,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   var ehpPageView = 'table', ehpBig = false;   // which EHP sub-page is showing; graph expanded to fill the page
   var ehpHistRange = 0;                      // days of history to show, 0 = all
   var ehpChart = 'bar', ehpHist = null;     // 'bar', 'hist' or 'roll' (rolling average); ehpHist: id -> [archived points]
+  var ehpZoom = null, ehpZoomStack = [], ehpZoomSig = '';   // zoomed {x0, x1, y0, y1} of the history and rolling graphs, null = fit all
+  var ehpCancelDrag = null;                 // set while a zoom box is being dragged
 
   function ehpLoad() {
     if (ehpLoaded || ehpLoading || !SERVED) return Promise.resolve();
@@ -2158,7 +2165,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     $('ehpSize').title = ehpBig ? 'Shrink the graph to half the page' : 'Make the graph fill the page';
     $('ehpBarTitle').textContent = (ehpMode === 'eff' ? 'Efficiency' : ehpMode === 'n' ? 'Games completed' : 'Effective Hours Played')
       + (ehpChart === 'hist' ? ' over time' : ehpChart === 'roll' ? ' \u2013 ' + rollTitle() : '') + (ehpFiltered() ? ' (filtered)' : '');
-    $('ehpRangeWrap').hidden = ehpChart === 'bar';
+    $('ehpRangeWrap').hidden = $('ehpZoomWrap').hidden = $('ehpZoomHint').hidden = ehpChart === 'bar';
+    // Anything that changes what the lines measure makes the zoomed window meaningless.
+    var sig = JSON.stringify([ehpChart, ehpMode, ehpHistRange, ehpChart === 'roll' ? [rollDays, rollPer] : '', ehpEffMean, ehpFilter]);
+    if (sig !== ehpZoomSig) { ehpZoomSig = sig; ehpClearZoom(); }
+    ehpSyncZoom();
+    ehpCancelDrag = null;                  // the graph being dragged on is about to be replaced
     $('ehpChBar').setAttribute('aria-selected', ehpChart === 'bar' ? 'true' : 'false');
     $('ehpChHist').setAttribute('aria-selected', ehpChart === 'hist' ? 'true' : 'false');
     $('ehpChRoll').setAttribute('aria-selected', ehpChart === 'roll' ? 'true' : 'false');
@@ -2200,6 +2212,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     series.forEach(function (sr) { sr.pts.forEach(function (p) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }); });
     if (x0 === x1) { x0 -= 864e5; x1 += 864e5; }
     var padY = (y1 - y0) * 0.06 || Math.abs(y0) * 0.01 || 1; y0 -= padY; y1 += padY;
+    if (ehpZoom) { x0 = ehpZoom.x0; x1 = ehpZoom.x1; y0 = ehpZoom.y0; y1 = ehpZoom.y1; }
     var wrap = document.createElement('div'); wrap.className = 'hwrap'; box.appendChild(wrap);
     var W = Math.max(320, wrap.clientWidth || box.clientWidth - 28), H = Math.max(200, wrap.clientHeight || 340), L = 64, R = 16, T = 10, B = 28;
     var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('role', 'img');
@@ -2221,20 +2234,30 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       tx.textContent = fmtTick(t, xt.cand, xt.span);
     });
     el('line', { x1: L, x2: W - R, y1: H - B, y2: H - B }, 'stroke:var(--axis)');
+    var lines = el('g', {});
+    if (ehpZoom) {                           // keep zoomed lines inside the plot area
+      var clip = el('clipPath', { id: 'ehpClip' }), area = document.createElementNS(NS, 'rect');
+      area.setAttribute('x', L); area.setAttribute('y', T); area.setAttribute('width', W - L - R); area.setAttribute('height', H - B - T);
+      clip.appendChild(area); lines.setAttribute('clip-path', 'url(#ehpClip)');
+    }
     series.forEach(function (sr) {
       var c = seriesColor(sr.ci, dark);
-      el('polyline', { points: sr.pts.map(function (p) { return fx(p.x).toFixed(1) + ',' + fy(p.y).toFixed(1); }).join(' '), fill: 'none', 'stroke-width': 2, 'stroke-linejoin': 'round' }, 'stroke:' + c);
-      sr.pts.forEach(function (p) { if (!p.est && !p.between) el('circle', { cx: fx(p.x), cy: fy(p.y), r: 3.5 }, 'fill:' + c + ';stroke:var(--surface);stroke-width:1.5'); });
+      lines.appendChild(el('polyline', { points: sr.pts.map(function (p) { return fx(p.x).toFixed(1) + ',' + fy(p.y).toFixed(1); }).join(' '), fill: 'none', 'stroke-width': 2, 'stroke-linejoin': 'round' }, 'stroke:' + c));
+      sr.pts.forEach(function (p) { if (!p.est && !p.between) lines.appendChild(el('circle', { cx: fx(p.x), cy: fy(p.y), r: 3.5 }, 'fill:' + c + ';stroke:var(--surface);stroke-width:1.5')); });
     });
     var hl = el('circle', { r: 6, cx: -20, cy: -20 }, 'fill:none;stroke:var(--ink);stroke-width:2');
     var tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true;
     wrap.appendChild(svg); wrap.appendChild(tip);
-    svg.addEventListener('mousemove', function (e) {
-      var r = svg.getBoundingClientRect(), mx = (e.clientX - r.left) * W / r.width, my = (e.clientY - r.top) * H / r.height, best = null, bd = 30 * 30;
+    var zbox = el('rect', { visibility: 'hidden' }, 'fill:var(--accent-wash);stroke:var(--accent)'), drag = null;
+    function pos(e) { var r = svg.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height, r: r }; }
+    function hideHover() { hl.setAttribute('cx', -20); hl.setAttribute('cy', -20); tip.hidden = true; }
+    function showHover(m) {
+      var r = m.r, best = null, bd = 30 * 30;
       series.forEach(function (sr) { sr.pts.forEach(function (p) {
-        var d = Math.pow(fx(p.x) - mx, 2) + Math.pow(fy(p.y) - my, 2); if (d < bd) { bd = d; best = { sr: sr, p: p }; }
+        var X = fx(p.x), Y = fy(p.y); if (X < L - 6 || X > W - R + 6 || Y < T - 6 || Y > H - B + 6) return;   // zoomed out of view
+        var d = Math.pow(X - m.x, 2) + Math.pow(Y - m.y, 2); if (d < bd) { bd = d; best = { sr: sr, p: p }; }
       }); });
-      if (!best) { hl.setAttribute('cx', -20); hl.setAttribute('cy', -20); tip.hidden = true; return; }
+      if (!best) { hideHover(); return; }
       hl.setAttribute('cx', fx(best.p.x)); hl.setAttribute('cy', fy(best.p.y));
       tip.textContent = '';
       var a = document.createElement('div'); a.className = 'tl'; a.textContent = nameOf(best.sr.id);
@@ -2244,9 +2267,47 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       var px = fx(best.p.x) * r.width / W, py = fy(best.p.y) * r.height / H;
       var left = px + 14; if (left + tip.offsetWidth > r.width - 4) left = px - 14 - tip.offsetWidth;
       tip.style.left = Math.max(4, left) + 'px'; tip.style.top = Math.max(4, py - tip.offsetHeight - 12) + 'px';
+    }
+    // ---- drag a box to zoom, same behaviour as the Graphs view
+    function endDrag() { drag = null; ehpCancelDrag = null; zbox.setAttribute('visibility', 'hidden'); }
+    svg.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0) return;
+      var m = pos(e); if (m.x < L || m.x > W - R || m.y < T || m.y > H - B) return;
+      drag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y }; ehpCancelDrag = endDrag;
+      hideHover();
+      svg.setPointerCapture(e.pointerId); e.preventDefault();
     });
-    svg.addEventListener('mouseleave', function () { hl.setAttribute('cx', -20); hl.setAttribute('cy', -20); tip.hidden = true; });
+    svg.addEventListener('pointermove', function (e) {
+      var m = pos(e);
+      if (!drag) { if (e.pointerType !== 'touch') showHover(m); return; }
+      drag.x1 = clamp(m.x, L, W - R); drag.y1 = clamp(m.y, T, H - B);
+      zbox.setAttribute('x', Math.min(drag.x0, drag.x1)); zbox.setAttribute('y', Math.min(drag.y0, drag.y1));
+      zbox.setAttribute('width', Math.abs(drag.x1 - drag.x0)); zbox.setAttribute('height', Math.abs(drag.y1 - drag.y0));
+      zbox.setAttribute('visibility', 'visible');
+    });
+    svg.addEventListener('pointerup', function (e) {
+      if (!drag) return;
+      var d = drag, m = pos(e); endDrag();
+      var k = m.r.width / W, dx = Math.abs(d.x1 - d.x0) * k, dy = Math.abs(d.y1 - d.y0) * k;   // in screen pixels
+      if (dx < 6 && dy < 6) { showHover(m); return; }
+      var ix = function (px) { return x0 + (px - L) / (W - L - R) * (x1 - x0); };
+      var iy = function (py) { return y0 + (H - B - py) / (H - B - T) * (y1 - y0); };
+      var n = { x0: x0, x1: x1, y0: y0, y1: y1 };
+      if (dx >= 6) { n.x0 = ix(Math.min(d.x0, d.x1)); n.x1 = ix(Math.max(d.x0, d.x1)); }
+      if (dy >= 6) { n.y0 = iy(Math.max(d.y0, d.y1)); n.y1 = iy(Math.min(d.y0, d.y1)); }
+      if (n.x1 - n.x0 < 1 || !(n.y1 - n.y0 > 0)) return;
+      ehpZoomStack.push(ehpZoom); ehpZoom = n; renderEhpBars();
+    });
+    svg.addEventListener('pointercancel', endDrag);
+    svg.addEventListener('pointerleave', function () { if (!drag) hideHover(); });
+    svg.addEventListener('dblclick', ehpResetZoom);
   }
+  function ehpClearZoom() { ehpZoom = null; ehpZoomStack.length = 0; }
+  function ehpSyncZoom() { $('ehpBackBtn').disabled = !ehpZoomStack.length; $('ehpResetBtn').disabled = ehpZoom === null; }
+  function ehpResetZoom() { ehpClearZoom(); renderEhpBars(); }
+  window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ehpCancelDrag) ehpCancelDrag(); });
+  $('ehpBackBtn').addEventListener('click', function () { if (ehpZoomStack.length) { ehpZoom = ehpZoomStack.pop(); renderEhpBars(); } });
+  $('ehpResetBtn').addEventListener('click', ehpResetZoom);
   $('ehpRange').addEventListener('change', function () { ehpHistRange = +this.value; renderEhpBars(); });
   $('ehpChBar').addEventListener('click', function () { ehpSetChart('bar'); });
   function ehpSetChart(c) { ehpChart = c; if (c !== 'bar') ehpHist = null; renderEhpBars(); renderEhpLegend(); if (c !== 'bar') ehpLoadHist(); }
@@ -2402,11 +2463,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     if (u && u.graph) { say(nameOf(id) + ' is already on the graph.'); return; }
     if (!u) { ehpEnqueue(id); ehpFetchCountry(id); u = ehp.users[id]; say('Downloading EHP data for ' + nameOf(id) + '. They will appear on the graph when it finishes.'); }
     u.graph = true; u.hidden = false; u.ci = ehpNextCi(id);
+    ehpClearZoom();
     ehpSave(); renderEhp();
   }
   function ehpGraphRemove(id) {
     var u = ehp.users[id]; if (!u) return;
-    u.graph = false; ehpSave(); renderEhp();
+    u.graph = false;
+    if (!ehpGraphIds().length) ehpClearZoom();
+    ehpSave(); renderEhp();
   }
   // Replace the graph with these users. Only users that already have EHP data are used: quick selects never start downloads.
   function ehpGraphSet(ids, label) {
@@ -2415,6 +2479,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     ids.forEach(function (id) { var u = ehp.users[id]; if (u && u.games && chosen.indexOf(id) < 0) chosen.push(id); else if (!u || !u.games) skipped++; });
     Object.keys(ehp.users).forEach(function (id) { ehp.users[id].graph = false; });
     chosen.forEach(function (id, i) { var u = ehp.users[id]; u.graph = true; u.hidden = false; u.ci = i; });
+    ehpClearZoom();
     ehpSave(); renderEhp();
     say(label + ': ' + chosen.length + (chosen.length === 1 ? ' user' : ' users') + ' on the graph'
       + (skipped ? ', ' + skipped + ' skipped with no EHP data yet (add them with the search box).' : '.'));
