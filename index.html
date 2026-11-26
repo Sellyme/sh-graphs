@@ -144,6 +144,10 @@ h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
 /* chart */
 .chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
 .chart-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+.chart-head h2 select {
+  font: inherit; color: inherit; max-width: min(260px, 100%); padding: 0 4px;
+  background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; cursor: pointer;
+}
 .chart-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
 .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; position: relative; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
@@ -152,6 +156,7 @@ h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
 .switch input:checked + .track { background: var(--accent); }
 .switch input:checked + .track::after { transform: translateX(12px); }
 .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch.disabled { opacity: 0.45; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .switch .track, .switch .track::after { transition: none; } }
 .zoom { display: flex; gap: 6px; }
 .card {
@@ -312,6 +317,23 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
             <span class="track" aria-hidden="true"></span>
             <span>Show data point markers</span>
           </label>
+          <label class="switch" title="Off: compare everyone with whoever is in the lead now, across the whole graph. On: compare with whoever was in the lead at each point in time.">
+            <input type="checkbox" id="deltaTimeToggle">
+            <span class="track" aria-hidden="true"></span>
+            <span>Deltas follow the leader over time</span>
+          </label>
+          <label class="switch" style="justify-content:space-between;cursor:default" title="Rolling graphs (in Graphs and EHP) average the gain over this much time before each point.">
+            <span>Rolling average window</span>
+            <select id="rollSel" class="btn small" style="padding:0 6px">
+              <option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="365">1 year</option>
+            </select>
+          </label>
+          <label class="switch" style="justify-content:space-between;cursor:default" title="The unit rolling averages are shown in. A month is a twelfth of a year.">
+            <span>Show average gain per</span>
+            <select id="rollPerSel" class="btn small" style="padding:0 6px">
+              <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
+            </select>
+          </label>
           <h3>EHP</h3>
           <label class="switch" title="Off: total median time divided by total playtime. On: work out efficiency for each game, then average those.">
             <input type="checkbox" id="effMeanToggle">
@@ -365,14 +387,23 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     </div>
 
     <div class="chart-head">
-      <h2 id="chartTitle">Points</h2>
+      <h2><span id="chartTitle">Points</span> <select id="deltaRef" aria-label="Show deltas to" title="Choose who the deltas are measured against. This is temporary and is not saved." hidden></select></h2>
       <div class="chart-tools">
         <span class="muted">Drag a box on the chart to zoom. Double-click to reset.</span>
+        <label class="switch" id="deltaSwitch" title="Show each user's gap to the leading visible user (see Settings)">
+          <input type="checkbox" id="deltaToggle">
+          <span class="track" aria-hidden="true"></span>
+          <span>Deltas</span>
+        </label>
         <label class="switch" id="baseSwitch">
           <input type="checkbox" id="baseToggle">
           <span class="track" aria-hidden="true"></span>
           <span id="baseLabel">Start at 0</span>
         </label>
+        <div class="views" role="tablist" aria-label="Chart type" id="chTypes">
+          <button role="tab" id="chCum" aria-selected="true">Cumulative</button>
+          <button role="tab" id="chRoll" aria-selected="false">Rolling</button>
+        </div>
       </div>
     </div>
 
@@ -490,6 +521,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
         <div class="views" role="tablist" aria-label="Chart type">
           <button role="tab" id="ehpChBar" aria-selected="true">Bar chart</button>
           <button role="tab" id="ehpChHist" aria-selected="false">History</button>
+          <button role="tab" id="ehpChRoll" aria-selected="false">Rolling</button>
         </div>
         <label class="muted" id="ehpRangeWrap" hidden>Range <select id="ehpRange" class="btn small" style="padding:0 6px">
           <option value="0">All time</option><option value="1825">Last 5 years</option><option value="365">Last year</option><option value="90">Last 90 days</option>
@@ -605,10 +637,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   var selection = [];             // {id, ci, visible}
   var metricKey = 'validPoints';
   var showPoints = false;         // draw a circle at every data point on every line
+  var graphRolling = false;       // Graphs view shows rolling averages (where the metric allows) instead of totals
+  var rollDays = 7;               // rolling average window in days, shared by Graphs and EHP
+  var rollPer = 'day';            // unit the rolling average is shown per, a key of ROLL_PER
+  var ROLL_PER = { day: 1, week: 7, month: 365 / 12 };   // length of each unit in days; 12 months make exactly the 1-year window
   var ehpEffMean = false;         // EHP efficiency: mean of per-game efficiencies instead of sum(median) / sum(playtime)
   var ehpPageSize = 25;           // EHP leaderboard rows per page
   var countries = {};             // id -> country code, cached from historical data (used for EHP flags)
   var zeroBase = {};              // metric key -> true when its y-axis starts at 0 (1 for ranks)
+  var deltaOn = {};               // metric key -> true when the graph shows the gap to the best visible user
+  var deltaPerTime = false;       // deltas compare with the leader at each moment instead of the current leader
+  var deltaPick = '';             // temporary choice from the title dropdown: a user id or 'leader', '' to follow the setting. Never saved.
+  var deltaOverTime = false;      // the shown deltas are against whoever led at each moment
+  var deltaBaseKey = '';          // which users the shown deltas are measured against, '' when showing totals
   var FLIP = false;               // rank metrics draw with 1 at the top
   var data = new Map();           // id -> {status:'loading'|'ok'|'error', records:[], error, fetchedAt, req}
   var view = null, zoomStack = [], hover = null, drag = null;
@@ -617,13 +658,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   function nameOf(id) { return users.get(id) || id; }
   function selected(id) { return selection.some(function (s) { return s.id === id; }); }
   function metric() { return MBYKEY[metricKey] || METRICS[0]; }
+  function canRoll(m) { return m.group !== 'ranks' && m.kind !== 'pct'; }   // not ranks, not AGC
+  function rollActive() { return graphRolling && canRoll(metric()); }
+  function deltaActive() { var m = metric(); return m.group !== 'ranks' && !!deltaOn[m.key]; }
 
   // ================= Persistence =================
   function snapshot() {
     var u = [];
     users.forEach(function (name, id) { u.push({ id: id, name: name }); });
     u.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    return { version: 1, users: u, presets: presets, selection: selection, metric: metricKey, zeroBase: zeroBase, showPoints: showPoints, countries: countries, ehpEffMean: ehpEffMean, ehpPageSize: ehpPageSize };
+    return { version: 1, users: u, presets: presets, selection: selection, metric: metricKey, zeroBase: zeroBase, deltaOn: deltaOn, deltaPerTime: deltaPerTime, showPoints: showPoints, countries: countries, ehpEffMean: ehpEffMean, ehpPageSize: ehpPageSize, graphRolling: graphRolling, rollDays: rollDays, rollPer: rollPer };
   }
   function applyStore(d) {
     users = new Map();
@@ -634,10 +678,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     }) : [];
     if (d.metric) metricKey = d.metric;
     showPoints = d.showPoints === true;
+    deltaPerTime = d.deltaPerTime === true;
     ehpEffMean = d.ehpEffMean === true;
+    graphRolling = d.graphRolling === true;
+    rollDays = [1, 7, 30, 365].indexOf(d.rollDays) >= 0 ? d.rollDays : 7;
+    rollPer = Object.keys(ROLL_PER).indexOf(d.rollPer) >= 0 ? d.rollPer : 'day';
     ehpPageSize = [10, 25, 50, 100].indexOf(d.ehpPageSize) >= 0 ? d.ehpPageSize : 25;
     countries = (d.countries && typeof d.countries === 'object') ? d.countries : {};
     zeroBase = (d.zeroBase && typeof d.zeroBase === 'object') ? d.zeroBase : {};
+    deltaOn = (d.deltaOn && typeof d.deltaOn === 'object') ? d.deltaOn : {};
   }
   var saveTimer = 0, saveWarned = false;
   function save() {
@@ -812,6 +861,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     });
   }
   function setMetric(key) {
+    if (key !== metricKey) deltaPick = '';
     metricKey = key;
     view = null; zoomStack.length = 0; hover = null; hideTip();
     save(); renderTabs(); renderLegend(); syncZoom(); draw();
@@ -884,13 +934,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   function setSettingsPanel(open) {
     $('settingsPanel').hidden = !open;
     $('settingsBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) { $('pointsToggle').checked = showPoints; $('effMeanToggle').checked = ehpEffMean; $('pageSizeSel').value = String(ehpPageSize); }
+    if (open) { $('pointsToggle').checked = showPoints; $('deltaTimeToggle').checked = deltaPerTime; $('effMeanToggle').checked = ehpEffMean; $('rollSel').value = String(rollDays); $('rollPerSel').value = rollPer; $('pageSizeSel').value = String(ehpPageSize); }
   }
   $('settingsBtn').addEventListener('click', function () { setSettingsPanel($('settingsPanel').hidden); });
   $('settingsPanel').addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { setSettingsPanel(false); $('settingsBtn').focus(); }
   });
   $('pointsToggle').addEventListener('change', function () { showPoints = this.checked; save(); draw(); });
+  $('deltaTimeToggle').addEventListener('change', function () { deltaPerTime = this.checked; deltaPick = ''; hover = null; hideTip(); save(); draw(); });
+  function rollChanged() {
+    view = null; zoomStack.length = 0; hover = null; hideTip();
+    save(); renderLegend(); syncZoom(); draw(); renderEhp();
+  }
+  $('rollSel').addEventListener('change', function () { rollDays = +this.value; rollChanged(); });
+  $('rollPerSel').addEventListener('change', function () { rollPer = this.value; rollChanged(); });
   $('effMeanToggle').addEventListener('change', function () { ehpEffMean = this.checked; save(); renderEhp(); });
   $('pageSizeSel').addEventListener('change', function () {
     var first = ehpPage * ehpPageSize;
@@ -969,7 +1026,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       else if (d && d.status === 'error') { ct.className = 'ct err'; ct.textContent = d.error; }
       else if (d) {
         var l = latest(m, d.records);
-        ct.textContent = l ? fmtValue(m, l.v, l.rec) : 'No data';
+        if (l && rollActive()) {
+          var rp = rollingSeries(m, d.records);
+          ct.textContent = rp.length ? fmtRate(m, rp[rp.length - 1].y) : 'Not enough history';
+        } else ct.textContent = l ? fmtValue(m, l.v, l.rec) : 'No data';
         if (d.status === 'loading') { var sp2 = document.createElement('i'); sp2.className = 'spin'; sp2.style.marginLeft = '6px'; ct.appendChild(sp2); }
       }
       tog.appendChild(sw); tog.appendChild(nm); tog.appendChild(ct);
@@ -997,18 +1057,179 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   }
 
   // ================= Chart =================
+  function metricPoints(m, recs) {
+    var pts = [];
+    recs.forEach(function (r) { var v = metricValue(m, r); if (v !== null) pts.push({ x: r._t, y: v, rec: r }); });
+    return pts;
+  }
   function visibleSeries() {
-    var m = metric(), out = [];
+    var m = metric(), roll = rollActive(), out = [];
     selection.forEach(function (s) {
       if (!s.visible) return;
       var d = data.get(s.id);
       if (!d || !d.records.length) return;
-      var pts = [];
-      d.records.forEach(function (r) { var v = metricValue(m, r); if (v !== null) pts.push({ x: r._t, y: v, rec: r }); });
+      var pts = roll ? rollingSeries(m, d.records) : metricPoints(m, d.records);
       if (pts.length) out.push({ sel: s, pts: pts, deduced: pts.every(function (p) { return p.rec._deduced === true; }) });
     });
     return out;
   }
+  // ---- rolling averages
+  // Average gain over the trailing window: (value at x - value one window earlier) / (window / unit),
+  // reading values along the straight lines the cumulative graph draws. That curve only bends when
+  // one end of the window passes a data point, so sampling at those times draws it exactly. It starts
+  // one full window after the first point. Samples that are not data points are marked "between".
+  function rollingPoints(pts, days, per) {
+    if (!pts.length) return [];
+    var span = days * 864e5, start = pts[0].x + span, end = pts[pts.length - 1].x, times = [];
+    pts.forEach(function (p) {
+      if (p.x >= start) times.push(p.x);
+      if (p.x + span >= start && p.x + span <= end) times.push(p.x + span);
+    });
+    var j = 0;
+    return uniqueSorted(times).map(function (x) {
+      while (j + 1 < pts.length && pts[j + 1].x <= x) j++;
+      var own = pts[j].x === x;
+      return { x: x, y: ((own ? pts[j].y : valueAt(pts, x)) - valueAt(pts, x - span)) * ROLL_PER[per] / days, src: pts[j], between: !own };
+    });
+  }
+  var rollCache = new WeakMap();   // records array -> {metric, window and unit: points}; draw() runs on every pointer move
+  function rollingSeries(m, recs) {
+    var c = rollCache.get(recs), key = [m.key, rollDays, rollPer].join('/');
+    if (!c) rollCache.set(recs, c = {});
+    return c[key] || (c[key] = rollingPoints(metricPoints(m, recs), rollDays, rollPer).map(function (p) {
+      return { x: p.x, y: p.y, rec: p.src.rec, between: p.between };
+    }));
+  }
+  function rollWindowName() { return rollDays === 365 ? '1-year' : rollDays + '-day'; }
+  function rollTitle() { return rollWindowName() + ' rolling average, per ' + rollPer; }
+  function fmtRateNum(v) { return (Math.abs(v) < 0.005 ? 0 : v).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+  function fmtRate(m, v) { return fmtRateNum(v) + ' ' + m.unit + '/' + rollPer; }
+
+  // ---- deltas
+  // The reference is the visible user with the highest latest value (ranks never use deltas).
+  function bestSeries(list) {
+    var best = null;
+    list.forEach(function (s) { if (!best || s.pts[s.pts.length - 1].y > best.pts[best.pts.length - 1].y) best = s; });
+    return best;
+  }
+  // Value of a series at time x, along the straight lines the graph draws. After the last point the
+  // last value is held; before the first point there is nothing to compare with.
+  function valueAt(pts, x) {
+    if (x < pts[0].x) return null;
+    var lo = 0, hi = pts.length - 1;
+    if (x >= pts[hi].x) return pts[hi].y;
+    while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (pts[mid].x <= x) lo = mid; else hi = mid; }
+    var a = pts[lo], b = pts[hi];
+    return a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x);
+  }
+  // The baseline is a list of {x, y, lead, deduced}: the value to subtract at each time a line
+  // should be sampled, and whose value it is.
+  // Current leader: that one user's line, across the whole graph.
+  function refBaseline(ref, list) {
+    var times = [];
+    list.forEach(function (s) { s.pts.forEach(function (p) { if (p.x >= ref.pts[0].x) times.push(p.x); }); });
+    return uniqueSorted(times).map(function (x) { return { x: x, y: valueAt(ref.pts, x), lead: ref.sel.id, deduced: ref.deduced }; });
+  }
+  // Leader over time: the highest of all lines at each moment. Snapshot times alone would cut the
+  // corner where the lead changes between them, so the crossing times are included too.
+  // In the first week of the date range, who happens to have data yet would decide the leader. So up
+  // to the end of that week, one of the users whose data starts within it (the one with the highest
+  // earliest value) counts as having had that value from the start.
+  function leaderBaseline(list) {
+    var weekEnd = Date.parse(API_MIN) + 7 * 864e5, opener = null;
+    list.forEach(function (s) { if (s.pts[0].x < weekEnd && (!opener || s.pts[0].y > opener.pts[0].y)) opener = s; });
+    var times = [];
+    list.forEach(function (s) { s.pts.forEach(function (p) { times.push(p.x); }); });
+    times = uniqueSorted(times);
+    var out = [];
+    times.forEach(function (t0, i) {
+      var t1 = i + 1 < times.length ? times[i + 1] : t0, lines = [];
+      list.forEach(function (s) {
+        var a = valueAt(s.pts, t0), b = valueAt(s.pts, t1);
+        if (a === null) {
+          if (s !== opener) return;
+          a = s.pts[0].y;                  // not started yet: hold its first value
+          if (b === null) b = a;
+        }
+        lines.push({ s: s, a: a, b: b });
+      });
+      var top = lines.reduce(function (m, l) { return l.a > m.a || (l.a === m.a && l.b > m.b) ? l : m; });
+      out.push({ x: t0, y: top.a, lead: top.s.sel.id, deduced: top.s.deduced });
+      var f = 0;   // fraction of the way from t0 to t1
+      for (;;) {
+        var next = null, nf = 1;
+        lines.forEach(function (l) {
+          var da = top.a - l.a, db = top.b - l.b;
+          if (db >= 0) return;                    // does not get past the leader before t1
+          var cross = da / (da - db);
+          if (cross > f && (cross < nf || (next && cross === nf && l.b > next.b))) { next = l; nf = cross; }
+        });
+        if (!next) break;
+        top = next; f = nf;
+        out.push({ x: t0 + (t1 - t0) * f, y: top.a + (top.b - top.a) * f, lead: top.s.sel.id, deduced: top.s.deduced });
+      }
+    });
+    return out;
+  }
+  function uniqueSorted(a) {
+    a.sort(function (x, y) { return x - y; });
+    return a.filter(function (v, i) { return !i || v !== a[i - 1]; });
+  }
+  // Each series minus the baseline, sampled at the baseline's times within the line's range (which
+  // include all of its own). Points that are not one of the user's snapshots are marked "between".
+  function toDeltas(list, base) {
+    var estimated = base.some(function (b) { return b.deduced; });
+    return list.map(function (s) {
+      var pts = [], j = 0, first = s.pts[0].x, last = s.pts[s.pts.length - 1].x;
+      base.forEach(function (b) {
+        if (b.x < first || b.x > last) return;
+        while (j + 1 < s.pts.length && s.pts[j + 1].x <= b.x) j++;
+        var own = s.pts[j].x === b.x;
+        pts.push({ x: b.x, y: (own ? s.pts[j].y : valueAt(s.pts, b.x)) - b.y, rec: s.pts[j].rec, lead: b.lead, between: !own || !!s.pts[j].between });
+      });
+      return { sel: s.sel, pts: pts, deduced: s.deduced || estimated };
+    }).filter(function (s) { return s.pts.length; });
+  }
+  // draw() runs on every pointer move, so the deltas are only rebuilt when their inputs change.
+  var deltaCache = { inputs: [] };
+  function deltaSeries(list) {
+    var inputs = [metricKey, deltaPerTime, deltaPick, rollActive() ? rollDays + '/' + rollPer : ''];
+    list.forEach(function (s) { inputs.push(s.sel, data.get(s.sel.id).records, nameOf(s.sel.id)); });
+    var c = deltaCache;
+    if (c.inputs.length === inputs.length && inputs.every(function (v, i) { return v === c.inputs[i]; })) return c;
+    var picked = list.filter(function (s) { return s.sel.id === deltaPick; })[0];
+    var overTime = deltaPick === 'leader' || (!picked && deltaPerTime);
+    var ref = overTime ? null : picked || bestSeries(list);
+    var base = ref ? refBaseline(ref, list) : leaderBaseline(list);
+    var leads = {};
+    base.forEach(function (b) { leads[b.lead] = true; });
+    deltaCache = {
+      inputs: inputs, series: toDeltas(list, base),
+      key: (ref ? 'now:' : 'time:') + Object.keys(leads).sort().join(),
+      overTime: !ref, choice: ref ? ref.sel.id : 'leader'      // what the title dropdown shows
+    };
+    return deltaCache;
+  }
+  // draw() runs on every pointer move: only touch the dropdown when something changed, or it would close while in use.
+  var deltaRefSig = '';
+  function renderDeltaRef(list, choice) {
+    var el = $('deltaRef');
+    el.hidden = !choice;
+    if (!choice) return;
+    var opts = [['leader', 'the leader']].concat(list.map(function (s) { return [s.sel.id, nameOf(s.sel.id)]; }));
+    var sig = JSON.stringify(opts);
+    if (sig !== deltaRefSig) {
+      deltaRefSig = sig; el.textContent = '';
+      opts.forEach(function (o) { var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; el.appendChild(op); });
+    }
+    if (el.value !== choice) el.value = choice;
+  }
+  function fmtDelta(m, v, rec) {
+    var shown = rollActive() ? fmtRate(m, Math.abs(v)) : fmtValue(m, Math.abs(v), rec, true);
+    if (!/[1-9]/.test(shown)) return shown;   // rounds to zero: no sign
+    return (v < 0 ? '−' : '+') + shown;
+  }
+
   function updateEmpty() {
     var e = $('empty'), t = $('emptyTitle'), x = $('emptyText');
     var vs = visibleSeries();
@@ -1017,6 +1238,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     if (!selection.length) { t.textContent = 'Pick users to graph'; x.textContent = 'Type a name in the search box above. Names come from the user list on the Users page.'; }
     else if (selection.some(function (s) { var d = data.get(s.id); return d && d.status === 'loading'; })) { t.textContent = 'Loading data'; x.textContent = 'Fetching statistics from Steam Hunters.'; }
     else if (!selection.some(function (s) { return s.visible; })) { t.textContent = 'All users are hidden'; x.textContent = 'Click a name below the chart to show it again.'; }
+    else if (rollActive() && selection.some(function (s) { var d = data.get(s.id); return s.visible && d && latest(metric(), d.records); })) {
+      t.textContent = 'Not enough history';
+      x.textContent = 'A ' + rollWindowName() + ' rolling average needs at least ' + rollDays + (rollDays === 1 ? ' day' : ' days') + ' of data. You can change the period in Settings.';
+    }
     else { t.textContent = 'No data for this metric'; x.textContent = 'The selected users have no values for ' + metric().name + ' yet.'; }
   }
 
@@ -1082,7 +1307,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     if (x0 === x1) { x0 -= D; x1 += D; }
     if (y0 === y1) { var d = Math.abs(y0) * 0.01 || 1; y0 -= d; y1 += d; }
     var bm = metric();
-    if (zeroBase[bm.key]) {
+    if (zeroBase[bm.key] && !deltaActive()) {   // a delta graph always has the reference line at 0
       var floor = bm.kind === 'rank' ? 1 : 0;
       if (y0 > floor) y0 = floor;
       if (y1 <= y0) y1 = y0 + 1;
@@ -1098,10 +1323,29 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   function draw() {
     var cur = metric();
     FLIP = cur.kind === 'rank';
-    $('chartTitle').textContent = cur.name;
+    $('deltaSwitch').hidden = cur.group === 'ranks';
+    $('deltaToggle').checked = !!deltaOn[cur.key];
+    var deltas = deltaActive(), roll = rollActive();
+    $('chTypes').hidden = !canRoll(cur);
+    $('chCum').setAttribute('aria-selected', roll ? 'false' : 'true');
+    $('chRoll').setAttribute('aria-selected', roll ? 'true' : 'false');
+    $('baseToggle').disabled = deltas;
+    $('baseSwitch').classList.toggle('disabled', deltas);
+    $('baseSwitch').title = deltas ? 'Not used while Deltas is on' : '';
     $('baseToggle').checked = !!zeroBase[cur.key];
     $('baseLabel').textContent = 'Start at ' + (FLIP ? 1 : 0);
     series = visibleSeries();
+    // A picked user who has since been hidden or removed is forgotten.
+    if (deltaPick && deltaPick !== 'leader' && !selection.some(function (s) { return s.id === deltaPick && s.visible; })) deltaPick = '';
+    var shownUsers = series;
+    var dl = deltas && series.length ? deltaSeries(series) : null, baseKey = dl ? dl.key : '';
+    deltaOverTime = !!dl && dl.overTime;
+    renderDeltaRef(shownUsers, dl ? dl.choice : '');
+    if (dl) series = dl.series;
+    if (baseKey !== deltaBaseKey) {   // the deltas moved, so any zoomed y-range no longer applies
+      deltaBaseKey = baseKey; view = null; zoomStack.length = 0; hover = null; hideTip(); syncZoom();
+    }
+    $('chartTitle').textContent = cur.name + (roll ? ' \u2013 ' + rollTitle() : '') + (dl ? ' \u2013 delta to' : '');
     updateEmpty();
     var rect = cv.getBoundingClientRect(), W = rect.width, Hh = rect.height;
     if (W < 10 || Hh < 10) return;
@@ -1117,7 +1361,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     var cSurface = col('--surface'), cInk2 = col('--ink2'), cGrid = col('--grid'), cAxis = col('--axis'), cAccent = col('--accent'), cWash = col('--accent-wash'), cMuted = col('--muted');
 
     var top = 12, bottom = 30, right = 16, ph = Hh - top - bottom;
-    var yt = niceTicks(V.y0, V.y1, Math.max(2, Math.floor(ph / 56)), isIntMetric(m));
+    var yt = niceTicks(V.y0, V.y1, Math.max(2, Math.floor(ph / 56)), isIntMetric(m) && !rollActive());
     ctx.font = '12px ' + FONT;
     var lw = 0;
     yt.ticks.forEach(function (t) { lw = Math.max(lw, ctx.measureText(fmtAxis(m, t, yt.dec)).width); });
@@ -1155,7 +1399,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       // point markers: same rule for every line, controlled by Settings
       if (showPoints) {
         ctx.fillStyle = c; ctx.strokeStyle = cSurface; ctx.lineWidth = 2;
-        s.pts.forEach(function (p) { ctx.beginPath(); ctx.arc(fx(p.x), fy(p.y), 4, 0, 6.2832); ctx.fill(); ctx.stroke(); });
+        s.pts.forEach(function (p) { if (p.between) return; ctx.beginPath(); ctx.arc(fx(p.x), fy(p.y), 4, 0, 6.2832); ctx.fill(); ctx.stroke(); });
       }
     });
     if (hover) {
@@ -1200,7 +1444,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     tip.querySelector('.sw').style.setProperty('--c', seriesColor(hover.s.sel.ci, isDark()));
     tip.querySelector('.tn').textContent = nameOf(hover.s.sel.id);
     tip.querySelector('.td').textContent = fmtFull(pt.x) + (pt.rec._deduced ? ' (current stats, no history)' : '');
-    tip.querySelector('.tv').textContent = fmtValue(m, pt.y, pt.rec, true);
+    tip.querySelector('.tv').textContent = !deltaBaseKey ? (rollActive() ? fmtRate(m, pt.y) : fmtValue(m, pt.y, pt.rec, true))
+      : pt.lead !== hover.s.sel.id ? fmtDelta(m, pt.y, pt.rec) + ' vs ' + nameOf(pt.lead)
+      : deltaOverTime ? 'In the lead' : 'Reference user';
     tip.hidden = false;
     var w = tip.offsetWidth, h = tip.offsetHeight, cw = cv.clientWidth;
     var left = px + 14; if (left + w > cw - 4) left = px - 14 - w; if (left < 4) left = 4;
@@ -1240,6 +1486,24 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   $('resetBtn').addEventListener('click', resetZoom);
   $('baseToggle').addEventListener('change', function () {
     if (this.checked) zeroBase[metricKey] = true; else delete zeroBase[metricKey];
+    view = null; zoomStack.length = 0; hover = null; hideTip();
+    save(); syncZoom(); draw();
+  });
+
+  function setGraphRolling(on) {
+    if (graphRolling === on) return;
+    graphRolling = on; deltaPick = '';
+    view = null; zoomStack.length = 0; hover = null; hideTip();
+    save(); renderLegend(); syncZoom(); draw();
+  }
+  $('chCum').addEventListener('click', function () { setGraphRolling(false); });
+  $('chRoll').addEventListener('click', function () { setGraphRolling(true); });
+
+  $('deltaRef').addEventListener('change', function () { deltaPick = this.value; hover = null; hideTip(); draw(); });
+
+  $('deltaToggle').addEventListener('change', function () {
+    if (this.checked) deltaOn[metricKey] = true; else delete deltaOn[metricKey];
+    deltaPick = '';
     view = null; zoomStack.length = 0; hover = null; hideTip();
     save(); syncZoom(); draw();
   });
@@ -1356,7 +1620,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   var ehpMode = 'ehp', ehpSortKey = 'ehp', ehpFilterSig = null;
   var ehpPageView = 'table', ehpBig = false;   // which EHP sub-page is showing; graph expanded to fill the page
   var ehpHistRange = 0;                      // days of history to show, 0 = all
-  var ehpChart = 'bar', ehpHist = null;     // bar chart or history lines; ehpHist: id -> [archived points]
+  var ehpChart = 'bar', ehpHist = null;     // 'bar', 'hist' or 'roll' (rolling average); ehpHist: id -> [archived points]
 
   function ehpLoad() {
     if (ehpLoaded || ehpLoading || !SERVED) return Promise.resolve();
@@ -1416,7 +1680,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
         var sv = d.users[id], lo = ehp.users[id];
         if (sv && sv.games && (sv.updated || 0) > (lo.updated || 0)) { lo.games = sv.games; lo.updated = sv.updated; changed = true; }
       });
-      if (changed) { ehpOvVer++; ehpFilterSig = null; renderEhp(); if (!$('tagsView').hidden) renderTags(); if (ehpChart === 'hist') ehpLoadHist(); }
+      if (changed) { ehpOvVer++; ehpFilterSig = null; renderEhp(); if (!$('tagsView').hidden) renderTags(); if (ehpChart !== 'bar') ehpLoadHist(); }
     }).catch(function () { /* offline: try again next time */ }).then(function () {
       return fetch('ehp-status', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(renderEhpAuto).catch(function () { });
     });
@@ -1428,8 +1692,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       var by = {};
       (j.points || []).forEach(function (pt) { (by[pt.id] = by[pt.id] || []).push(pt); });
       Object.keys(by).forEach(function (id) { by[id].sort(function (a, b) { return a.t - b.t; }); });
-      ehpHist = by; renderEhpBars();
-    }).catch(function () { ehpHist = ehpHist || {}; renderEhpBars(); });
+      ehpHist = by; renderEhpBars(); renderEhpLegend();
+    }).catch(function () { ehpHist = ehpHist || {}; renderEhpBars(); renderEhpLegend(); });
   }
 
   function flagOf(id) {
@@ -1553,7 +1817,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   }
   // History: replay the saved appid deltas against today's game data (medians, completion times, flags and tags are
   // treated as static, so old points are re-priced with the best data we have). Respects the current filters.
-  function ehpHistPoints(id) {
+  // daily: estimate the past in one-day steps (rolling averages need that detail) instead of capping the point count.
+  function ehpHistPoints(id, daily) {
     var u = ehp.users[id], out = [];
     if (!u || !u.games) return out;
     var snaps = ehpHist && ehpHist[id];
@@ -1567,7 +1832,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     (snaps[0].add || []).forEach(function (a) { var g = by[a]; if (g && g.u > 0 && g.u * 1000 < t0) ev.push({ t: g.u * 1000, g: g, a: a }); });
     ev.sort(function (x, y) { return x.t - y.t; });
     if (ev.length) {
-      var span = t0 - ev[0].t, bucket = Math.max(DAY, Math.ceil(span / 400 / DAY) * DAY), i = 0;   // at most about 400 estimated points
+      var span = t0 - ev[0].t, bucket = daily ? DAY : Math.max(DAY, Math.ceil(span / 400 / DAY) * DAY), i = 0;   // unless daily, at most about 400 estimated points
       var start = Math.floor(ev[0].t / bucket) * bucket, last = aggStats(A);
       out.push({ t: start, st: last, est: true });
       while (i < ev.length) {
@@ -1583,12 +1848,25 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       else { move(sn.rem, -1); move(sn.add, 1); }
       out.push({ t: sn.t, st: aggStats(A) });
     });
-    if (ehpHistRange > 0) {                          // trim to the chosen range, starting the line at the edge
-      var cut = Date.now() - ehpHistRange * DAY, k = 0;
-      while (k < out.length && out[k].t < cut) k++;
-      if (k > 0) { var edge = { t: cut, st: out[k - 1].st, est: true }; out = out.slice(k); out.unshift(edge); }
-    }
     return out;
+  }
+  // A user's line on the history or rolling graph, for the metric being shown. "est" and "between" points get no marker.
+  function ehpLinePoints(id) {
+    var roll = ehpChart === 'roll';
+    var pts = ehpHistPoints(id, roll).filter(function (pt) { return typeof ehpValue(pt.st) === 'number'; })
+      .map(function (pt) { return { x: pt.t, y: ehpValue(pt.st), est: !!pt.est }; });
+    // The average is taken over the whole history first, so the window can reach back past the chosen range.
+    if (roll) pts = rollingPoints(pts, rollDays, rollPer).map(function (p) { return { x: p.x, y: p.y, est: p.src.est, between: p.between }; });
+    if (ehpHistRange > 0) {                          // trim to the chosen range, starting the line at the edge
+      var cut = Date.now() - ehpHistRange * 864e5, k = 0;
+      while (k < pts.length && pts[k].x < cut) k++;
+      if (k > 0) {
+        // The rolling line is straight between its points; the history line carries the previous value to the edge.
+        var edge = { x: cut, y: roll && k < pts.length ? valueAt(pts, cut) : pts[k - 1].y, est: true };
+        pts = pts.slice(k); pts.unshift(edge);
+      }
+    }
+    return pts;
   }
   // Keep games that dropped off the completed list (e.g. the game gained achievements) flagged as o=1.
   function mergeGames(old, fresh) {
@@ -1871,17 +2149,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   // ---- bar graph (reads stored data only; hiding a user never touches the API or the saved data)
   function ehpValue(st) { return ehpMode === 'eff' ? st.eff : ehpMode === 'n' ? st.n : st.ehp; }
   function ehpFmt(v) { return v === null ? 'n/a' : ehpMode === 'eff' ? fmtEff(v) : ehpMode === 'n' ? Math.round(v).toLocaleString() + ' games' : fmtH(v); }
+  // A rolling average of efficiency is a change in a percentage, so it is measured in percentage points.
+  function ehpFmtRate(v) { return fmtRateNum(v) + (ehpMode === 'eff' ? ' % points' : ehpMode === 'n' ? ' games' : ' h') + '/' + rollPer; }
   function renderEhpBars() {
     var box = $('ehpBars'); box.textContent = '';
     box.className = 'barcard ' + (ehpBig ? 'sz-max' : 'sz-min');
     $('ehpSize').textContent = ehpBig ? 'Minimise' : 'Expand'; $('ehpSize').setAttribute('aria-pressed', ehpBig ? 'true' : 'false');
     $('ehpSize').title = ehpBig ? 'Shrink the graph to half the page' : 'Make the graph fill the page';
     $('ehpBarTitle').textContent = (ehpMode === 'eff' ? 'Efficiency' : ehpMode === 'n' ? 'Games completed' : 'Effective Hours Played')
-      + (ehpChart === 'hist' ? ' over time' : '') + (ehpFiltered() ? ' (filtered)' : '');
-    $('ehpRangeWrap').hidden = ehpChart !== 'hist';
+      + (ehpChart === 'hist' ? ' over time' : ehpChart === 'roll' ? ' \u2013 ' + rollTitle() : '') + (ehpFiltered() ? ' (filtered)' : '');
+    $('ehpRangeWrap').hidden = ehpChart === 'bar';
     $('ehpChBar').setAttribute('aria-selected', ehpChart === 'bar' ? 'true' : 'false');
     $('ehpChHist').setAttribute('aria-selected', ehpChart === 'hist' ? 'true' : 'false');
-    if (ehpChart === 'hist') { renderEhpHist(box); return; }
+    $('ehpChRoll').setAttribute('aria-selected', ehpChart === 'roll' ? 'true' : 'false');
+    if (ehpChart !== 'bar') { renderEhpHist(box); return; }
     var dark = isDark();
     var rows = ehpRows().filter(function (r) { return r.st && ehp.users[r.id].graph && !ehp.users[r.id].hidden && ehpValue(r.st) !== null; });
     rows.sort(function (a, b) { return ehpValue(b.st) - ehpValue(a.st); });
@@ -1907,14 +2188,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     var NS = 'http://www.w3.org/2000/svg', dark = isDark();
     function msg(t) { var e = document.createElement('div'); e.className = 'barempty'; e.textContent = t; box.appendChild(e); }
     if (!ehpHist) { msg('Loading history.'); return; }
-    var val = function (st) { return ehpMode === 'eff' ? st.eff : ehpMode === 'n' ? st.n : st.ehp; };
+    var roll = ehpChart === 'roll', fmt = roll ? ehpFmtRate : ehpFmt;
     var series = [];
     Object.keys(ehp.users).forEach(function (id) {
       var u = ehp.users[id]; if (!u.graph || u.hidden) return;
-      var pts = ehpHistPoints(id).filter(function (pt) { return typeof val(pt.st) === 'number'; }).map(function (pt) { return { x: pt.t, y: val(pt.st), est: !!pt.est }; });
+      var pts = ehpLinePoints(id);
       if (pts.length) series.push({ id: id, ci: u.ci, pts: pts });
     });
-    if (!series.length) { msg(ehpGraphIds().length ? 'No history for these users yet. Wait for their download to finish.' : 'Add users with the search box above, or use a quick select.'); return; }
+    if (!series.length) { msg(!ehpGraphIds().length ? 'Add users with the search box above, or use a quick select.' : roll ? 'No ' + rollWindowName() + ' average to show. Users need to be visible, downloaded and have at least that much history.' : 'No history for these users yet. Wait for their download to finish.'); return; }
     var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     series.forEach(function (sr) { sr.pts.forEach(function (p) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }); });
     if (x0 === x1) { x0 -= 864e5; x1 += 864e5; }
@@ -1925,12 +2206,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     svg.setAttribute('aria-label', 'Line graph of ' + $('ehpBarTitle').textContent);
     function el(tag, attrs, style) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (style) e.setAttribute('style', style); svg.appendChild(e); return e; }
     var fx = function (x) { return L + (x - x0) / (x1 - x0) * (W - L - R); }, fy = function (y) { return H - B - (y - y0) / (y1 - y0) * (H - B - T); };
-    var yt = niceTicks(y0, y1, 5, ehpMode === 'n');
+    var yt = niceTicks(y0, y1, 5, ehpMode === 'n' && !roll);
     yt.ticks.forEach(function (t) {
       var y = fy(t); if (y < T || y > H - B) return;
       el('line', { x1: L, x2: W - R, y1: y, y2: y }, 'stroke:var(--grid)');
       var tx = el('text', { x: L - 8, y: y, 'text-anchor': 'end', 'dominant-baseline': 'central', 'font-size': 12 }, 'fill:var(--ink2)');
-      tx.textContent = t.toLocaleString(undefined, { minimumFractionDigits: yt.dec, maximumFractionDigits: yt.dec }) + (ehpMode === 'eff' ? '%' : ehpMode === 'ehp' ? ' h' : '');
+      tx.textContent = t.toLocaleString(undefined, { minimumFractionDigits: yt.dec, maximumFractionDigits: yt.dec }) + (ehpMode === 'eff' ? (roll ? '' : '%') : ehpMode === 'ehp' ? ' h' : '');
     });
     var xt = timeTicks(x0, x1, Math.max(2, Math.floor((W - L - R) / 110)));
     xt.ticks.forEach(function (t) {
@@ -1943,7 +2224,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     series.forEach(function (sr) {
       var c = seriesColor(sr.ci, dark);
       el('polyline', { points: sr.pts.map(function (p) { return fx(p.x).toFixed(1) + ',' + fy(p.y).toFixed(1); }).join(' '), fill: 'none', 'stroke-width': 2, 'stroke-linejoin': 'round' }, 'stroke:' + c);
-      sr.pts.forEach(function (p) { if (!p.est) el('circle', { cx: fx(p.x), cy: fy(p.y), r: 3.5 }, 'fill:' + c + ';stroke:var(--surface);stroke-width:1.5'); });
+      sr.pts.forEach(function (p) { if (!p.est && !p.between) el('circle', { cx: fx(p.x), cy: fy(p.y), r: 3.5 }, 'fill:' + c + ';stroke:var(--surface);stroke-width:1.5'); });
     });
     var hl = el('circle', { r: 6, cx: -20, cy: -20 }, 'fill:none;stroke:var(--ink);stroke-width:2');
     var tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true;
@@ -1958,7 +2239,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       tip.textContent = '';
       var a = document.createElement('div'); a.className = 'tl'; a.textContent = nameOf(best.sr.id);
       var b = document.createElement('div'); b.className = 'td'; b.textContent = fmtFull(best.p.x) + (best.p.est ? ' (estimated from unlock dates)' : '');
-      var c = document.createElement('div'); c.className = 'tv'; c.textContent = ehpFmt(best.p.y);
+      var c = document.createElement('div'); c.className = 'tv'; c.textContent = fmt(best.p.y);
       tip.appendChild(a); tip.appendChild(b); tip.appendChild(c); tip.hidden = false;
       var px = fx(best.p.x) * r.width / W, py = fy(best.p.y) * r.height / H;
       var left = px + 14; if (left + tip.offsetWidth > r.width - 4) left = px - 14 - tip.offsetWidth;
@@ -1967,9 +2248,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     svg.addEventListener('mouseleave', function () { hl.setAttribute('cx', -20); hl.setAttribute('cy', -20); tip.hidden = true; });
   }
   $('ehpRange').addEventListener('change', function () { ehpHistRange = +this.value; renderEhpBars(); });
-  $('ehpChBar').addEventListener('click', function () { ehpChart = 'bar'; renderEhpBars(); });
-  $('ehpChHist').addEventListener('click', function () { ehpChart = 'hist'; ehpHist = null; renderEhpBars(); ehpLoadHist(); });
-  window.addEventListener('resize', function () { if (ehpChart === 'hist' && !$('ehpView').hidden && ehpPageView === 'graph') renderEhpBars(); });
+  $('ehpChBar').addEventListener('click', function () { ehpSetChart('bar'); });
+  function ehpSetChart(c) { ehpChart = c; if (c !== 'bar') ehpHist = null; renderEhpBars(); renderEhpLegend(); if (c !== 'bar') ehpLoadHist(); }
+  $('ehpChHist').addEventListener('click', function () { ehpSetChart('hist'); });
+  $('ehpChRoll').addEventListener('click', function () { ehpSetChart('roll'); });
+  window.addEventListener('resize', function () { if (ehpChart !== 'bar' && !$('ehpView').hidden && ehpPageView === 'graph') renderEhpBars(); });
   function renderEhpLegend() {
     var box = $('ehpLegend'), dark = isDark(); box.textContent = '';
     ehpGraphIds().sort(function (x, y) { return ehp.users[x].ci - ehp.users[y].ci; }).forEach(function (id) {
@@ -1981,7 +2264,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       var sw = document.createElement('i'); sw.className = 'sw'; sw.style.setProperty('--c', seriesColor(u.ci, dark));
       var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = nameOf(id);
       var ct = document.createElement('span'); ct.className = 'ct';
-      if (st) ct.textContent = ehpFmt(ehpValue(st));
+      if (st && ehpChart === 'roll') {
+        var rp = ehpHist ? ehpLinePoints(id) : null;
+        ct.textContent = !rp ? 'Loading' : rp.length ? ehpFmtRate(rp[rp.length - 1].y) : 'Not enough history';
+      }
+      else if (st) ct.textContent = ehpFmt(ehpValue(st));
       else if (ws && ws.s === 'error') { ct.className = 'ct err'; ct.textContent = ws.msg; }
       else if (ws) { var sp = document.createElement('i'); sp.className = 'spin'; ct.appendChild(sp); ct.appendChild(document.createTextNode(ws.s === 'queued' ? ' Queued' : ' Downloading')); }
       else ct.textContent = 'No data';
@@ -2013,7 +2300,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     $('ehpPgTable').setAttribute('aria-selected', v === 'table' ? 'true' : 'false');
     $('ehpPgGraph').setAttribute('aria-selected', v === 'graph' ? 'true' : 'false');
     renderEhp();
-    if (v === 'graph' && ehpChart === 'hist' && !ehpHist) ehpLoadHist();
+    if (v === 'graph' && ehpChart !== 'bar' && !ehpHist) ehpLoadHist();
   }
   $('ehpPgTable').addEventListener('click', function () { setEhpPage('table'); });
   $('ehpPgGraph').addEventListener('click', function () { setEhpPage('graph'); });
